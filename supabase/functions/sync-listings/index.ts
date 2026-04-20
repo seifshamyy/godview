@@ -84,59 +84,59 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
+const PAGES_PER_RUN = 30 // ~3000 listings per invocation — safe for memory/CPU limits
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  // Accept { startPage, draft } to resume a previous run
+  let body: Record<string, unknown> = {}
+  try { body = await req.json() } catch { /* empty body is fine */ }
+  const startPage = Number(body.startPage ?? 1)
+  const draft = body.draft === true || body.draft === 'true'
+
   const supabase = createSupabaseClient()
   try {
     await withSyncLog(supabase, 'listings', async (logId) => {
       let jwt = await getJWT()
       const syncStart = new Date().toISOString()
-      const syncedIds = new Set<string>()
       let created = 0
-      let updated = 0
+      let page = startPage
 
-      for (const draft of [false, true]) {
-        let page = 1
-        let hasMore = true
+      while (page < startPage + PAGES_PER_RUN) {
+        const result = await pfFetch('/listings', jwt, { page, perPage: 100, draft: String(draft) })
+        jwt = result.jwt
+        const respBody = result.data as Record<string, unknown>
+        const listings = (respBody.results ?? respBody.data ?? []) as Record<string, unknown>[]
 
-        while (hasMore && page <= 200) {
-          const result = await pfFetch('/listings', jwt, { page, perPage: 100, draft: String(draft) })
-          jwt = result.jwt
-          const body = result.data as Record<string, unknown>
-          const listings = (body.data ?? body.listings ?? body ?? []) as Record<string, unknown>[]
+        if (!Array.isArray(listings) || listings.length === 0) break
 
-          if (!Array.isArray(listings) || listings.length === 0) { hasMore = false; break }
+        const mapped = listings.map(l => mapListing(l, syncStart))
+        const { error } = await supabase.from('pf_listings').upsert(mapped, { onConflict: 'pf_listing_id' })
+        if (error) console.error('Upsert error:', error)
+        else created += mapped.length
 
-          const mapped = listings.map(l => mapListing(l, syncStart))
-          for (const id of mapped.map(m => m.pf_listing_id)) syncedIds.add(id)
+        await emitProgress(supabase, logId, (page - startPage + 1) * 100)
+        await checkCancelled(supabase, logId)
 
-          const { error } = await supabase.from('pf_listings').upsert(mapped, { onConflict: 'pf_listing_id' })
-          if (error) console.error('Upsert error:', error)
-          else created += mapped.length
-
-          if (listings.length < 100) hasMore = false
-          page++
-          await emitProgress(supabase, logId, syncedIds.size)
-          await checkCancelled(supabase, logId)
-          await new Promise(r => setTimeout(r, 100))
-        }
+        const pagination = respBody.pagination as Record<string, unknown> | undefined
+        if (!pagination?.nextPage) break
+        page++
+        await new Promise(r => setTimeout(r, 50))
       }
 
-      // Mark unseen live listings as deleted
-      const { error: delErr } = await supabase
-        .from('pf_listings')
-        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-        .eq('is_live', true)
-        .eq('is_deleted', false)
-        .lt('last_synced_at', syncStart)
-
-      if (delErr) console.error('Delete mark error:', delErr)
-
-      return { created, updated, synced: syncedIds.size }
+      return { created, updated: 0, synced: created }
     })
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const nextPage = startPage + PAGES_PER_RUN
+    return new Response(JSON.stringify({ ok: true, nextPage, draft }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })

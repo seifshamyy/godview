@@ -70,15 +70,28 @@ export default function SyncStatus() {
     return () => { channel.unsubscribe() }
   }, [])
 
-  const triggerSync = async (type: string) => {
+  const triggerSync = async (type: string, body: Record<string, unknown> = {}) => {
     setTriggering(type)
     try {
       const fnName = type === 'scoring' ? 'run-scoring-pipeline' : `sync-${type}`
-      await fetch(`${EDGE_FUNCTION_BASE}/${fnName}`, {
+      const res = await fetch(`${EDGE_FUNCTION_BASE}/${fnName}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${SERVICE_ROLE}`, 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify(body),
       })
+      // Listings is chunked — keep firing until no more pages
+      if (type === 'listings' && res.ok) {
+        const json = await res.json()
+        if (json.nextPage) {
+          // Small gap so Realtime updates are visible between chunks
+          await new Promise(r => setTimeout(r, 500))
+          await triggerSync('listings', { startPage: json.nextPage, draft: json.draft ?? false })
+          if (!json.draft) {
+            // After live listings done, run draft listings
+            await triggerSync('listings', { startPage: 1, draft: true })
+          }
+        }
+      }
     } catch (e) {
       console.error(e)
     } finally {
