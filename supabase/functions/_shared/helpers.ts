@@ -1,5 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 export const SUPABASE_URL = 'https://oidizmsasvtffjhhzsmg.supabase.co'
 export const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pZGl6bXNhc3Z0ZmZqaGh6c21nIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDE1MjMyMCwiZXhwIjoyMDY5NzI4MzIwfQ.ZLXQnuQwCs0QZ5_UoxAS9vG63Eyg7yuTvY4LJ_9nSLE'
 export const PF_JWT_ENDPOINT = 'https://primary-production-e1a92.up.railway.app/webhook/99a74fd0-4d49-4ceb-8b69-9e696dbea679'

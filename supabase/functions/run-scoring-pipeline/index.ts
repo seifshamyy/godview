@@ -1,6 +1,7 @@
-import { createSupabaseClient } from '../_shared/helpers.ts'
+import { createSupabaseClient, corsHeaders } from '../_shared/helpers.ts'
 
-Deno.serve(async () => {
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const supabase = createSupabaseClient()
   const steps = ['fn_build_daily_snapshots', 'fn_build_segment_benchmarks', 'fn_score_all_listings', 'fn_build_aggregate_scores', 'fn_generate_recommendations']
   const timings: Record<string, number> = {}

@@ -1,4 +1,4 @@
-import { createSupabaseClient, getJWT, pfFetch, sleep, withSyncLog } from '../_shared/helpers.ts'
+import { createSupabaseClient, getJWT, pfFetch, sleep, withSyncLog, corsHeaders } from '../_shared/helpers.ts'
 
 function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   const price = (raw.price ?? {}) as Record<string, unknown>
@@ -84,7 +84,8 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const supabase = createSupabaseClient()
   try {
     await withSyncLog(supabase, 'listings', async () => {
@@ -132,8 +133,8 @@ Deno.serve(async () => {
       return { created, updated, synced: syncedIds.size }
     })
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
+    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })

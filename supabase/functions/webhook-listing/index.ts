@@ -1,6 +1,7 @@
-import { createSupabaseClient } from '../_shared/helpers.ts'
+import { createSupabaseClient, corsHeaders } from '../_shared/helpers.ts'
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
 
   const supabase = createSupabaseClient()
@@ -48,9 +49,9 @@ Deno.serve(async (req) => {
       if (error) console.error('Webhook listing action error:', error)
     }
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (err) {
     console.error('Webhook listing error:', err)
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
+    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })
