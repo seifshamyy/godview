@@ -1,4 +1,4 @@
-import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders, checkCancelled, emitProgress } from '../_shared/helpers.ts'
+import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders, checkCancelled, emitProgress, isToday } from '../_shared/helpers.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -7,37 +7,45 @@ Deno.serve(async (req: Request) => {
     await withSyncLog(supabase, 'leads', async (logId) => {
       let jwt = await getJWT()
       let page = 1
-      let hasMore = true
       let created = 0
 
-      while (hasMore && page <= 500) {
+      // Leads are newest-first — stop as soon as we see yesterday's data
+      while (page <= 500) {
         const result = await pfFetch('/leads', jwt, { page, perPage: 50 })
         jwt = result.jwt
         const body = result.data as Record<string, unknown>
-        const leads = (body.data ?? body.leads ?? body ?? []) as Record<string, unknown>[]
+        const leads = (body.data ?? []) as Record<string, unknown>[]
 
-        if (!Array.isArray(leads) || leads.length === 0) { hasMore = false; break }
+        if (!Array.isArray(leads) || leads.length === 0) break
 
-        const mapped = leads.map(lead => {
-          const listing = (lead.listing ?? {}) as Record<string, unknown>
-          return {
-            pf_lead_id:        String(lead.id ?? lead.pf_lead_id ?? ''),
-            listing_reference: listing.reference as string ?? null,
-            lead_created_at:   lead.createdAt as string ?? null,
-            response_link:     lead.responseLink as string ?? null,
-            raw_payload:       lead,
-          }
-        }).filter(l => l.pf_lead_id)
+        const todayLeads = leads.filter(l => isToday(l.createdAt as string))
 
-        const { error } = await supabase.from('pf_leads').upsert(mapped, { onConflict: 'pf_lead_id' })
-        if (error) console.error('Lead upsert error:', error)
-        else created += mapped.length
+        if (todayLeads.length > 0) {
+          const mapped = todayLeads.map(lead => {
+            const listing = (lead.listing ?? {}) as Record<string, unknown>
+            return {
+              pf_lead_id:        String(lead.id ?? ''),
+              listing_reference: listing.reference as string ?? null,
+              lead_created_at:   lead.createdAt as string ?? null,
+              response_link:     lead.responseLink as string ?? null,
+              raw_payload:       lead,
+            }
+          }).filter(l => l.pf_lead_id)
 
-        if (leads.length < 50) hasMore = false
+          const { error } = await supabase.from('pf_leads').upsert(mapped, { onConflict: 'pf_lead_id' })
+          if (error) console.error('Lead upsert error:', error)
+          else created += mapped.length
+          await emitProgress(supabase, logId, created)
+          await checkCancelled(supabase, logId)
+        }
+
+        // All records on this page are from before today — stop
+        if (leads.every(l => !isToday(l.createdAt as string))) break
+
+        const pagination = body.pagination as Record<string, unknown> | undefined
+        if (!pagination?.nextPage) break
         page++
-        await emitProgress(supabase, logId, created)
-        await checkCancelled(supabase, logId)
-        await new Promise(r => setTimeout(r, 100))
+        await new Promise(r => setTimeout(r, 50))
       }
 
       return { created, updated: 0, synced: created }

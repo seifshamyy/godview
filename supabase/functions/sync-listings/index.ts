@@ -1,28 +1,25 @@
-import { createSupabaseClient, getJWT, pfFetch, sleep, withSyncLog, corsHeaders, checkCancelled, emitProgress } from '../_shared/helpers.ts'
+import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders, checkCancelled, emitProgress, isToday } from '../_shared/helpers.ts'
 
 function mapListing(raw: Record<string, unknown>, syncedAt: string) {
-  const price = (raw.price ?? {}) as Record<string, unknown>
-  const amounts = (price.amounts ?? {}) as Record<string, unknown>
-  const products = (raw.products ?? {}) as Record<string, unknown>
-  const quality = (raw.qualityScore ?? {}) as Record<string, unknown>
-  const state = (raw.state ?? {}) as Record<string, unknown>
-  const portals = (raw.portals ?? {}) as Record<string, unknown>
-  const pf = (portals.propertyfinder ?? {}) as Record<string, unknown>
-  const media = (raw.media ?? {}) as Record<string, unknown>
-  const location = (raw.location ?? {}) as Record<string, unknown>
+  const price      = (raw.price      ?? {}) as Record<string, unknown>
+  const amounts    = (price.amounts  ?? {}) as Record<string, unknown>
+  const products   = (raw.products   ?? {}) as Record<string, unknown>
+  const quality    = (raw.qualityScore ?? {}) as Record<string, unknown>
+  const state      = (raw.state      ?? {}) as Record<string, unknown>
+  const portals    = (raw.portals    ?? {}) as Record<string, unknown>
+  const pf         = (portals.propertyfinder ?? {}) as Record<string, unknown>
+  const media      = (raw.media      ?? {}) as Record<string, unknown>
+  const location   = (raw.location   ?? {}) as Record<string, unknown>
   const assignedTo = (raw.assignedTo ?? {}) as Record<string, unknown>
-  const createdBy = (raw.createdBy ?? {}) as Record<string, unknown>
-  const street = (raw.street ?? {}) as Record<string, unknown>
-
-  const images = (media.images ?? []) as unknown[]
-  const videos = (media.videos ?? []) as unknown[]
-
-  const mapTier = (t: unknown) => {
+  const createdBy  = (raw.createdBy  ?? {}) as Record<string, unknown>
+  const street     = (raw.street     ?? {}) as Record<string, unknown>
+  const images     = (media.images   ?? []) as unknown[]
+  const videos     = (media.videos   ?? []) as unknown[]
+  const mapTier    = (t: unknown) => {
     if (!t || typeof t !== 'object') return null
     const tier = t as Record<string, unknown>
     return { id: tier.id, createdAt: tier.createdAt, expiresAt: tier.expiresAt, renewalEnabled: tier.renewalEnabled }
   }
-
   return {
     pf_listing_id:           String(raw.id ?? ''),
     reference:               String(raw.reference ?? ''),
@@ -84,59 +81,93 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
-const PAGES_PER_RUN = 30 // ~3000 listings per invocation — safe for memory/CPU limits
+const PAGES_PER_CHUNK = 25 // ~2500 listings — stays within resource limits
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  // Accept { startPage, draft } to resume a previous run
-  let body: Record<string, unknown> = {}
-  try { body = await req.json() } catch { /* empty body is fine */ }
-  const startPage = Number(body.startPage ?? 1)
-  const draft = body.draft === true || body.draft === 'true'
+  let reqBody: Record<string, unknown> = {}
+  try { reqBody = await req.json() } catch { /* no body is fine */ }
 
-  const supabase = createSupabaseClient()
+  const resumeLogId = reqBody.logId  as number | undefined
+  const startPage   = Number(reqBody.page   ?? 1)
+  const totalSoFar  = Number(reqBody.synced ?? 0)
+
+  const supabase  = createSupabaseClient()
+  const syncStart = new Date().toISOString()
+
+  // Chunk 1 creates a new log entry; subsequent chunks reuse it
+  let logId = resumeLogId
+  if (!logId) {
+    const { data } = await supabase
+      .from('sync_log')
+      .insert({ sync_type: 'listings', status: 'RUNNING' })
+      .select('id')
+      .single()
+    logId = data?.id
+  }
+
   try {
-    await withSyncLog(supabase, 'listings', async (logId) => {
-      let jwt = await getJWT()
-      const syncStart = new Date().toISOString()
-      let created = 0
-      let page = startPage
+    let jwt     = await getJWT()
+    let created = 0
+    let page    = startPage
+    let hasMore = true
 
-      while (page < startPage + PAGES_PER_RUN) {
-        const result = await pfFetch('/listings', jwt, { page, perPage: 100, draft: String(draft) })
-        jwt = result.jwt
-        const respBody = result.data as Record<string, unknown>
-        const listings = (respBody.results ?? respBody.data ?? []) as Record<string, unknown>[]
-
-        if (!Array.isArray(listings) || listings.length === 0) break
-
-        const mapped = listings.map(l => mapListing(l, syncStart))
-        const { error } = await supabase.from('pf_listings').upsert(mapped, { onConflict: 'pf_listing_id' })
-        if (error) console.error('Upsert error:', error)
-        else created += mapped.length
-
-        await emitProgress(supabase, logId, (page - startPage + 1) * 100)
-        await checkCancelled(supabase, logId)
-
-        const pagination = respBody.pagination as Record<string, unknown> | undefined
-        if (!pagination?.nextPage) break
-        page++
-        await new Promise(r => setTimeout(r, 50))
+    while (hasMore && page < startPage + PAGES_PER_CHUNK) {
+      // Honour cancel
+      const { data: logRow } = await supabase.from('sync_log').select('status').eq('id', logId).single()
+      if (logRow?.status === 'CANCELLED') {
+        return new Response(JSON.stringify({ ok: true, cancelled: true }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
       }
 
-      return { created, updated: 0, synced: created }
-    })
+      const result = await pfFetch('/listings', jwt, { page, perPage: 100, 'filter[state]': 'live' })
+      jwt = result.jwt
+      const body     = result.data as Record<string, unknown>
+      const listings = (body.results ?? body.data ?? []) as Record<string, unknown>[]
 
-    const nextPage = startPage + PAGES_PER_RUN
-    return new Response(JSON.stringify({ ok: true, nextPage, draft }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      if (!Array.isArray(listings) || listings.length === 0) { hasMore = false; break }
+
+      const mapped = listings.map(l => mapListing(l as Record<string, unknown>, syncStart))
+      const { error } = await supabase.from('pf_listings').upsert(mapped, { onConflict: 'pf_listing_id' })
+      if (error) console.error('Upsert error:', error)
+      else created += mapped.length
+
+      await supabase.from('sync_log').update({ records_synced: totalSoFar + created }).eq('id', logId)
+
+      const pagination = body.pagination as Record<string, unknown> | undefined
+      if (!pagination?.nextPage) { hasMore = false; break }
+      page++
+      await new Promise(r => setTimeout(r, 50))
+    }
+
+    const totalNow = totalSoFar + created
+
+    if (!hasMore) {
+      await supabase.from('sync_log').update({
+        status: 'SUCCESS',
+        completed_at: new Date().toISOString(),
+        records_synced: totalNow,
+        records_created: totalNow,
+      }).eq('id', logId)
+      return new Response(JSON.stringify({ ok: true, done: true, synced: totalNow }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Return cursor so dashboard fires next chunk
+    return new Response(JSON.stringify({ ok: true, done: false, logId, page, synced: totalNow }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
+    await supabase.from('sync_log').update({
+      status: 'FAILED',
+      completed_at: new Date().toISOString(),
+      error_message: String(err),
+    }).eq('id', logId)
     return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })

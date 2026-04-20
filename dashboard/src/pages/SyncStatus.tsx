@@ -71,7 +71,7 @@ export default function SyncStatus() {
   }, [])
 
   const triggerSync = async (type: string, body: Record<string, unknown> = {}) => {
-    setTriggering(type)
+    if (!body.logId) setTriggering(type) // only set on first call
     try {
       const fnName = type === 'scoring' ? 'run-scoring-pipeline' : `sync-${type}`
       const res = await fetch(`${EDGE_FUNCTION_BASE}/${fnName}`, {
@@ -79,23 +79,18 @@ export default function SyncStatus() {
         headers: { Authorization: `Bearer ${SERVICE_ROLE}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      // Listings is chunked — keep firing until no more pages
       if (type === 'listings' && res.ok) {
         const json = await res.json()
-        if (json.nextPage) {
-          // Small gap so Realtime updates are visible between chunks
-          await new Promise(r => setTimeout(r, 500))
-          await triggerSync('listings', { startPage: json.nextPage, draft: json.draft ?? false })
-          if (!json.draft) {
-            // After live listings done, run draft listings
-            await triggerSync('listings', { startPage: 1, draft: true })
-          }
+        if (!json.done && !json.cancelled && json.logId) {
+          // Fire next chunk — reuse same logId so progress accumulates in one row
+          await new Promise(r => setTimeout(r, 200))
+          await triggerSync('listings', { logId: json.logId, page: json.page, synced: json.synced })
         }
       }
     } catch (e) {
       console.error(e)
     } finally {
-      setTriggering(null)
+      if (!body.logId) setTriggering(null)
     }
   }
 
