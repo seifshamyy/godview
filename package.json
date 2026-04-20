@@ -1,0 +1,13 @@
+{
+  "name": "godview-root",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "serve": "^14.2.1"
+  },
+  "scripts": {
+    "prebuild": "cd dashboard && npm install",
+    "build": "cd dashboard && npm run build",
+    "start": "serve -s dashboard/dist"
+  }
+}
