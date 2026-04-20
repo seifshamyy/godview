@@ -45,20 +45,24 @@ Deno.serve(async (req: Request) => {
         await new Promise(r => setTimeout(r, 100))
       }
 
-      // Sync agent stats
-      const statsResult = await pfFetch('/stats/public-profiles', jwt)
-      jwt = statsResult.jwt
-      const statsBody = statsResult.data as Record<string, unknown>
-      const profiles = (statsBody.data ?? statsBody.profiles ?? statsBody ?? []) as Record<string, unknown>[]
+      // Sync agent stats (non-fatal — PF endpoint occasionally 502s)
+      try {
+        const statsResult = await pfFetch('/stats/public-profiles', jwt)
+        jwt = statsResult.jwt
+        const statsBody = statsResult.data as Record<string, unknown>
+        const profiles = (statsBody.data ?? statsBody.profiles ?? statsBody ?? []) as Record<string, unknown>[]
 
-      if (Array.isArray(profiles) && profiles.length > 0) {
-        const statsRows = profiles.map(p => ({
-          agent_public_profile_id: Number((p as Record<string, unknown>).publicProfileId ?? (p as Record<string, unknown>).id),
-          stats_payload:           p,
-          snapshot_date:           new Date().toISOString().split('T')[0],
-        })).filter(s => s.agent_public_profile_id)
+        if (Array.isArray(profiles) && profiles.length > 0) {
+          const statsRows = profiles.map(p => ({
+            agent_public_profile_id: Number((p as Record<string, unknown>).publicProfileId ?? (p as Record<string, unknown>).id),
+            stats_payload:           p,
+            snapshot_date:           new Date().toISOString().split('T')[0],
+          })).filter(s => s.agent_public_profile_id)
 
-        await supabase.from('pf_agent_stats').upsert(statsRows, { onConflict: 'agent_public_profile_id,snapshot_date' })
+          await supabase.from('pf_agent_stats').upsert(statsRows, { onConflict: 'agent_public_profile_id,snapshot_date' })
+        }
+      } catch (statsErr) {
+        console.error('Agent stats sync failed (non-fatal):', statsErr)
       }
 
       return { created: synced, updated: 0, synced }

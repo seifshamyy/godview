@@ -30,13 +30,13 @@ Deno.serve(async (req: Request) => {
       metadata: { timings },
     }).eq('id', logId)
 
-    return new Response(JSON.stringify({ ok: true, timings }), { status: 200 })
+    return new Response(JSON.stringify({ ok: true, timings }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (err) {
     await supabase.from('sync_log').update({
       status: 'FAILED',
       completed_at: new Date().toISOString(),
       error_message: String(err),
     }).eq('id', logId)
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
+    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })
