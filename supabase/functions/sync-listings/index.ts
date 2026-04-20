@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const supabase = createSupabaseClient()
   try {
-    await withSyncLog(supabase, 'listings', async () => {
+    await withSyncLog(supabase, 'listings', async (logId) => {
       let jwt = await getJWT()
       const syncStart = new Date().toISOString()
       const syncedIds = new Set<string>()

@@ -4,7 +4,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const supabase = createSupabaseClient()
   try {
-    await withSyncLog(supabase, 'leads', async () => {
+    await withSyncLog(supabase, 'leads', async (logId) => {
       let jwt = await getJWT()
       let page = 1
       let hasMore = true
