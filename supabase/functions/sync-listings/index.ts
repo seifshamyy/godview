@@ -1,4 +1,4 @@
-import { createSupabaseClient, getJWT, pfFetch, sleep, withSyncLog, corsHeaders } from '../_shared/helpers.ts'
+import { createSupabaseClient, getJWT, pfFetch, sleep, withSyncLog, corsHeaders, checkCancelled, emitProgress } from '../_shared/helpers.ts'
 
 function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   const price = (raw.price ?? {}) as Record<string, unknown>
@@ -116,6 +116,8 @@ Deno.serve(async (req: Request) => {
 
           if (listings.length < 100) hasMore = false
           page++
+          await emitProgress(supabase, logId, syncedIds.size)
+          await checkCancelled(supabase, logId)
           await new Promise(r => setTimeout(r, 100))
         }
       }

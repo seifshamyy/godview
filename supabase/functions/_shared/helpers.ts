@@ -80,6 +80,26 @@ export async function pfFetch(
   return { data: await res.json(), jwt }
 }
 
+export class CancelledError extends Error {
+  constructor() { super('Sync cancelled by user') }
+}
+
+export async function checkCancelled(
+  supabase: ReturnType<typeof createSupabaseClient>,
+  logId: number
+): Promise<void> {
+  const { data } = await supabase.from('sync_log').select('status').eq('id', logId).single()
+  if (data?.status === 'CANCELLED') throw new CancelledError()
+}
+
+export async function emitProgress(
+  supabase: ReturnType<typeof createSupabaseClient>,
+  logId: number,
+  synced: number
+): Promise<void> {
+  await supabase.from('sync_log').update({ records_synced: synced }).eq('id', logId)
+}
+
 export async function withSyncLog(
   supabase: ReturnType<typeof createSupabaseClient>,
   syncType: string,
@@ -106,12 +126,13 @@ export async function withSyncLog(
       .eq('id', logId)
     return result
   } catch (err) {
+    const status = err instanceof CancelledError ? 'CANCELLED' : 'FAILED'
     await supabase
       .from('sync_log')
       .update({
-        status: 'FAILED',
+        status,
         completed_at: new Date().toISOString(),
-        error_message: String(err),
+        error_message: status === 'FAILED' ? String(err) : null,
       })
       .eq('id', logId)
     throw err

@@ -1,4 +1,4 @@
-import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders } from '../_shared/helpers.ts'
+import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders, checkCancelled, emitProgress } from '../_shared/helpers.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -35,6 +35,8 @@ Deno.serve(async (req: Request) => {
 
         if (leads.length < 50) hasMore = false
         page++
+        await emitProgress(supabase, logId, created)
+        await checkCancelled(supabase, logId)
         await new Promise(r => setTimeout(r, 100))
       }
 
