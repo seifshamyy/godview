@@ -25,6 +25,7 @@ export interface PortfolioRow {
   project_status: string | null
   location_id: number | null
   location_name: string | null
+  destination: string | null
   total_leads: number
   leads_7d: number
   leads_30d: number

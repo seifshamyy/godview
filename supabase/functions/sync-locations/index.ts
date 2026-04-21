@@ -1,10 +1,21 @@
 import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders } from '../_shared/helpers.ts'
 
-function displayName(loc: Record<string, unknown>): string {
+function getNames(loc: Record<string, unknown>): { name: string; destination: string } {
   const tree = (loc.tree ?? []) as Record<string, unknown>[]
-  if (!tree.length) return String(loc.name ?? '')
-  if (String(tree[0]?.name ?? '').toLowerCase() === 'north coast') return 'North Coast'
-  return String(tree[1]?.name ?? tree[0]?.name ?? loc.name ?? '')
+  const leaf = String(loc.name ?? '')
+  if (!tree.length) return { name: leaf, destination: leaf }
+
+  const t = (node: unknown) => node as Record<string, unknown>
+
+  // North Coast: destination = "North Coast", granular = the leaf
+  if (String(tree[0]?.name ?? '').toLowerCase() === 'north coast') {
+    return { name: leaf, destination: 'North Coast' }
+  }
+
+  // Destination = TOWN level (tree[1]) if it exists, else CITY (tree[0])
+  const destination = String(tree[1]?.name ?? tree[0]?.name ?? leaf)
+
+  return { name: leaf, destination }
 }
 
 Deno.serve(async (req: Request) => {
@@ -12,18 +23,27 @@ Deno.serve(async (req: Request) => {
   const supabase = createSupabaseClient()
   try {
     await withSyncLog(supabase, 'locations', async (logId) => {
-      // Collect all unique location_ids from our listings
-      const { data: rows } = await supabase
-        .from('pf_listings')
-        .select('location_id')
-        .not('location_id', 'is', null)
+      // Paginate through ALL listings to collect unique location_ids
+      // (can't do SELECT DISTINCT via client — PostgREST caps at 1000 rows)
+      const allIds: Set<number> = new Set()
+      let from = 0
+      while (true) {
+        const { data } = await supabase
+          .from('pf_listings')
+          .select('location_id')
+          .not('location_id', 'is', null)
+          .range(from, from + 999)
+        if (!data || data.length === 0) break
+        data.forEach((r: Record<string, unknown>) => allIds.add(r.location_id as number))
+        if (data.length < 1000) break
+        from += 1000
+      }
 
-      const uniqueIds = [...new Set((rows ?? []).map((r: Record<string, unknown>) => r.location_id as number))]
+      const uniqueIds = [...allIds]
       let synced = 0
-
-      // Batch-fetch from PF API (comma-separated filter, 50 per call)
       const BATCH = 50
       let jwt = await getJWT()
+
       for (let i = 0; i < uniqueIds.length; i += BATCH) {
         const batch = uniqueIds.slice(i, i + BATCH)
         const result = await pfFetch('/locations', jwt, {
@@ -36,12 +56,14 @@ Deno.serve(async (req: Request) => {
 
         const mapped = locations.map(loc => {
           const coords = (loc.coordinates ?? {}) as Record<string, unknown>
+          const { name, destination } = getNames(loc)
           return {
             location_id: Number(loc.id),
-            name:        displayName(loc),
-            lat:         coords.lat  != null ? Number(coords.lat)  : null,
-            lng:         coords.lng  != null ? Number(coords.lng)  : null,
-            parent_id:   null, // skip self-ref FK to avoid ordering issues
+            name,
+            destination,
+            lat:         coords.lat != null ? Number(coords.lat) : null,
+            lng:         coords.lng != null ? Number(coords.lng) : null,
+            parent_id:   null,
             raw_payload: loc,
             synced_at:   new Date().toISOString(),
           }

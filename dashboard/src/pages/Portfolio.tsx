@@ -27,24 +27,35 @@ export default function Portfolio() {
   const [filterTier, setFilterTier] = useState('')
   const [filterBand, setFilterBand] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [filterDest, setFilterDest] = useState('')
+  const [filterLocation, setFilterLocation] = useState('')
   const [sortCol, setSortCol] = useState<keyof PortfolioRow>('total_score')
   const [sortAsc, setSortAsc] = useState(false)
 
   useEffect(() => {
     supabase
-      .from('v_portfolio_overview')
-      .select('*')
-      .order('total_score', { ascending: false })
-      .range(0, 19999)
+      .rpc('get_portfolio_overview')
       .then(({ data }) => {
         setRows((data as PortfolioRow[]) ?? [])
         setLoading(false)
       })
   }, [])
 
+  const destinations = useMemo(() => [...new Set(rows.map(r => r.destination).filter(Boolean))].sort(), [rows])
+  const locations    = useMemo(() => {
+    const src = filterDest ? rows.filter(r => r.destination === filterDest) : rows
+    return [...new Set(src.map(r => r.location_name).filter(Boolean))].sort()
+  }, [rows, filterDest])
+
   const filtered = useMemo(() => {
     let r = rows
-    if (search) r = r.filter(x => x.reference?.toLowerCase().includes(search.toLowerCase()) || x.location_name?.toLowerCase().includes(search.toLowerCase()))
+    if (search) r = r.filter(x =>
+      x.reference?.toLowerCase().includes(search.toLowerCase()) ||
+      x.location_name?.toLowerCase().includes(search.toLowerCase()) ||
+      x.destination?.toLowerCase().includes(search.toLowerCase())
+    )
+    if (filterDest) r = r.filter(x => x.destination === filterDest)
+    if (filterLocation) r = r.filter(x => x.location_name === filterLocation)
     if (filterTier) r = r.filter(x => x.current_tier === filterTier)
     if (filterBand) r = r.filter(x => x.score_band === filterBand)
     if (filterType) r = r.filter(x => x.property_type === filterType)
@@ -132,6 +143,14 @@ export default function Portfolio() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
+        <select className="input" value={filterDest} onChange={e => { setFilterDest(e.target.value); setFilterLocation('') }}>
+          <option value="">All destinations</option>
+          {destinations.map(d => <option key={d!} value={d!}>{d}</option>)}
+        </select>
+        <select className="input" value={filterLocation} onChange={e => setFilterLocation(e.target.value)}>
+          <option value="">All locations</option>
+          {locations.map(l => <option key={l!} value={l!}>{l}</option>)}
+        </select>
         <select className="input" value={filterTier} onChange={e => setFilterTier(e.target.value)}>
           <option value="">All tiers</option>
           {['featured', 'premium', 'standard', 'none'].map(t => <option key={t} value={t}>{t}</option>)}
@@ -156,6 +175,7 @@ export default function Portfolio() {
                 <Th col="reference" label="Ref" />
                 <Th col="property_type" label="Type" />
                 <Th col="bedrooms" label="Beds" />
+                <Th col="destination" label="Destination" />
                 <Th col="location_name" label="Location" />
                 <Th col="effective_price" label="Price" />
                 <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Tier</th>
@@ -177,6 +197,7 @@ export default function Portfolio() {
                   <td className="px-3 py-2 font-mono text-xs text-brand-400">{row.reference}</td>
                   <td className="px-3 py-2 text-gray-300 capitalize">{row.property_type ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-400">{row.bedrooms ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate">{row.destination ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-400 max-w-[140px] truncate">{row.location_name ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-300 whitespace-nowrap">{fmt(row.effective_price)}</td>
                   <td className="px-3 py-2"><TierBadge tier={row.current_tier} /></td>
