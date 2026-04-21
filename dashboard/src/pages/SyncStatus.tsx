@@ -170,7 +170,7 @@ export default function SyncStatus() {
                     </span>
                   </div>
                   {log.error_message && (
-                    <div className="text-red-400 mt-1 truncate">{log.error_message}</div>
+                    <div className="text-red-400 mt-1 break-words whitespace-normal">{log.error_message}</div>
                   )}
                 </div>
               ) : (
@@ -209,7 +209,7 @@ export default function SyncStatus() {
                   <td className="px-3 py-2 text-gray-400">{log.records_synced}</td>
                   <td className="px-3 py-2 text-gray-400">{log.records_created}</td>
                   <td className="px-3 py-2 text-gray-400">{log.records_updated}</td>
-                  <td className="px-3 py-2 text-red-400 max-w-xs truncate">{log.error_message ?? ''}</td>
+                  <td className="px-3 py-2 text-red-400 max-w-xs break-words whitespace-normal">{log.error_message ?? ''}</td>
                 </tr>
               ))}
               {all.length === 0 && (

@@ -82,6 +82,13 @@ export async function pfFetch(
     return pfFetch(path, jwt, params, retryCount + 1)
   }
 
+  if (res.status >= 500) {
+    if (retryCount >= 4) throw new Error(`PF API ${path} failed: ${res.status} ${await res.text()}`)
+    const backoff = Math.pow(2, retryCount) * 3000 + Math.random() * 1000
+    await sleep(backoff)
+    return pfFetch(path, jwt, params, retryCount + 1)
+  }
+
   if (!res.ok) {
     throw new Error(`PF API ${path} failed: ${res.status} ${await res.text()}`)
   }
