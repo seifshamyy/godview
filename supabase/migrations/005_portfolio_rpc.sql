@@ -64,8 +64,12 @@ CREATE OR REPLACE VIEW v_portfolio_overview AS
      ) ls ON true
   WHERE l.is_deleted = false;
 
--- RPC to bypass PostgREST 1000-row limit
-CREATE OR REPLACE FUNCTION get_portfolio_overview()
-RETURNS SETOF v_portfolio_overview
+-- RPC returning json bypasses PostgREST max-rows limit entirely
+DROP FUNCTION IF EXISTS get_portfolio_overview();
+CREATE FUNCTION get_portfolio_overview()
+RETURNS json
 LANGUAGE sql SECURITY DEFINER STABLE
-AS $$ SELECT * FROM v_portfolio_overview ORDER BY total_score DESC NULLS LAST; $$;
+AS $$
+  SELECT COALESCE(json_agg(t), '[]'::json)
+  FROM (SELECT * FROM v_portfolio_overview ORDER BY total_score DESC NULLS LAST) t;
+$$;

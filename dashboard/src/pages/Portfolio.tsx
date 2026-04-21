@@ -35,8 +35,11 @@ export default function Portfolio() {
   useEffect(() => {
     supabase
       .rpc('get_portfolio_overview')
-      .then(({ data }) => {
-        setRows((data as PortfolioRow[]) ?? [])
+      .then(({ data, error }) => {
+        if (error) console.error('Portfolio fetch error:', error)
+        // RPC returns json — Supabase wraps scalar json in an array, unwrap it
+        const rows = Array.isArray(data) ? data : (data ?? [])
+        setRows(rows as PortfolioRow[])
         setLoading(false)
       })
   }, [])
