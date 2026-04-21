@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import type { SyncLogEntry } from '../lib/types'
 import { RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, StopCircle } from 'lucide-react'
 
-const SYNC_TYPES = ['listings', 'leads', 'credits', 'agents', 'scoring']
+const SYNC_TYPES = ['listings', 'locations', 'leads', 'credits', 'agents', 'scoring']
 
 const EDGE_FUNCTION_BASE = 'https://oidizmsasvtffjhhzsmg.supabase.co/functions/v1'
 const SERVICE_ROLE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pZGl6bXNhc3Z0ZmZqaGh6c21nIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDE1MjMyMCwiZXhwIjoyMDY5NzI4MzIwfQ.ZLXQnuQwCs0QZ5_UoxAS9vG63Eyg7yuTvY4LJ_9nSLE'

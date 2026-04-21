@@ -35,7 +35,7 @@ export default function Portfolio() {
       .from('v_portfolio_overview')
       .select('*')
       .order('total_score', { ascending: false })
-      .limit(2000)
+      .range(0, 19999)
       .then(({ data }) => {
         setRows((data as PortfolioRow[]) ?? [])
         setLoading(false)
