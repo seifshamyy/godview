@@ -81,17 +81,19 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
+// API hard-caps at page 100 (10k records). After that we rotate cursor.
+const API_PAGE_LIMIT  = 99
 const PAGES_PER_CHUNK = 15
-const SELF_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sync-listings`
+
+const SELF_URL    = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sync-listings`
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-function fireNextChunk(logId: number, page: number, synced: number) {
+function fireNextChunk(payload: Record<string, unknown>) {
   const p = fetch(SELF_URL, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ logId, page, synced }),
+    body: JSON.stringify(payload),
   }).catch(e => console.error('Next chunk fire failed:', e))
-  // Keep the runtime alive long enough to dispatch the request
   // @ts-ignore
   if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(p)
 }
@@ -102,9 +104,11 @@ Deno.serve(async (req: Request) => {
   let reqBody: Record<string, unknown> = {}
   try { reqBody = await req.json() } catch { /* no body */ }
 
-  const resumeLogId = reqBody.logId as number | undefined
-  const startPage   = Number(reqBody.page   ?? 1)
-  const totalSoFar  = Number(reqBody.synced ?? 0)
+  const resumeLogId  = reqBody.logId      as number | undefined
+  const startPage    = Number(reqBody.page    ?? 1)
+  const totalSoFar   = Number(reqBody.synced  ?? 0)
+  // cursorDate: when set, we filter createdAt < cursorDate to go past the 10k API limit
+  const cursorDate   = reqBody.cursorDate as string | undefined
 
   const supabase  = createSupabaseClient()
   const syncStart = new Date().toISOString()
@@ -124,6 +128,8 @@ Deno.serve(async (req: Request) => {
     let created = 0
     let page    = startPage
     let hasMore = true
+    // Track oldest createdAt seen — used as cursor when we hit the page limit
+    let oldestCreatedAt: string | undefined
 
     while (hasMore && page < startPage + PAGES_PER_CHUNK) {
       const { data: logRow } = await supabase.from('sync_log').select('status').eq('id', logId).single()
@@ -133,7 +139,15 @@ Deno.serve(async (req: Request) => {
         })
       }
 
-      const result = await pfFetch('/listings', jwt, { page, perPage: 100, 'filter[state]': 'live' })
+      const params: Record<string, string | number> = {
+        page, perPage: 100,
+        'filter[state]': 'live',
+        'sort[createdAt]': 'desc',
+      }
+      // Cursor mode: filter to only listings older than the cursor
+      if (cursorDate) params['filter[createdAt][lt]'] = cursorDate
+
+      const result = await pfFetch('/listings', jwt, params)
       jwt = result.jwt
       const body     = result.data as Record<string, unknown>
       const listings = (body.results ?? body.data ?? []) as Record<string, unknown>[]
@@ -145,10 +159,21 @@ Deno.serve(async (req: Request) => {
       if (error) console.error('Upsert error:', error)
       else created += mapped.length
 
+      // Track the oldest createdAt for potential cursor rotation
+      for (const m of mapped) {
+        if (m.pf_created_at && (!oldestCreatedAt || m.pf_created_at < oldestCreatedAt)) {
+          oldestCreatedAt = m.pf_created_at
+        }
+      }
+
       await supabase.from('sync_log').update({ records_synced: totalSoFar + created }).eq('id', logId)
 
       const pagination = body.pagination as Record<string, unknown> | undefined
       if (!pagination?.nextPage) { hasMore = false; break }
+
+      // About to hit the API page limit — break now and rotate cursor
+      if (page >= API_PAGE_LIMIT) break
+
       page++
       await new Promise(r => setTimeout(r, 50))
     }
@@ -163,8 +188,14 @@ Deno.serve(async (req: Request) => {
         records_created: totalNow,
       }).eq('id', logId)
     } else {
-      // Server fires the next chunk itself — dashboard is not involved
-      fireNextChunk(logId!, page, totalNow)
+      const atPageLimit = page >= API_PAGE_LIMIT && oldestCreatedAt
+      fireNextChunk({
+        logId,
+        // If at the API page limit, rotate: reset to page 1 with a new cursor date
+        page:       atPageLimit ? 1 : page,
+        synced:     totalNow,
+        cursorDate: atPageLimit ? oldestCreatedAt : cursorDate,
+      })
     }
 
     return new Response(JSON.stringify({ ok: true, logId }), {
