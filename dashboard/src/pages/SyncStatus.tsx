@@ -71,7 +71,7 @@ export default function SyncStatus() {
   }, [])
 
   const triggerSync = async (type: string, body: Record<string, unknown> = {}) => {
-    if (!body.logId) setTriggering(type) // only set on first call
+    if (!body.logId) setTriggering(type)
     try {
       const fnName = type === 'scoring' ? 'run-scoring-pipeline' : `sync-${type}`
       const res = await fetch(`${EDGE_FUNCTION_BASE}/${fnName}`, {
@@ -79,16 +79,33 @@ export default function SyncStatus() {
         headers: { Authorization: `Bearer ${SERVICE_ROLE}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (type === 'listings' && res.ok) {
+      if (type === 'listings') {
+        if (!res.ok) {
+          // Mark log as FAILED if a chunk errors
+          if (body.logId) {
+            await supabase.from('sync_log').update({
+              status: 'FAILED',
+              completed_at: new Date().toISOString(),
+              error_message: `Chunk failed: HTTP ${res.status}`,
+            }).eq('id', body.logId)
+          }
+          return
+        }
         const json = await res.json()
         if (!json.done && !json.cancelled && json.logId) {
-          // Fire next chunk — reuse same logId so progress accumulates in one row
-          await new Promise(r => setTimeout(r, 200))
+          await new Promise(r => setTimeout(r, 300))
           await triggerSync('listings', { logId: json.logId, page: json.page, synced: json.synced })
         }
       }
     } catch (e) {
-      console.error(e)
+      console.error('triggerSync error:', e)
+      if (body.logId) {
+        await supabase.from('sync_log').update({
+          status: 'FAILED',
+          completed_at: new Date().toISOString(),
+          error_message: `Dashboard error: ${String(e)}`,
+        }).eq('id', body.logId)
+      }
     } finally {
       if (!body.logId) setTriggering(null)
     }

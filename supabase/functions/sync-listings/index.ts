@@ -81,7 +81,7 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
-const PAGES_PER_CHUNK = 25 // ~2500 listings — stays within resource limits
+const PAGES_PER_CHUNK = 8 // ~800 listings per chunk — well within 60s wall-clock limit
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
