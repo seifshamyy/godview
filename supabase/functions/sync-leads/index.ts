@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const result = await pfFetch('/leads', jwt, {
-        page, perPage: 100,
+        page, perPage: 50,
         orderBy: 'createdAt', 'sort[createdAt]': 'desc',
       })
       jwt = result.jwt
