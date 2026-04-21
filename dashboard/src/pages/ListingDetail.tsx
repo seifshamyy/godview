@@ -20,20 +20,20 @@ function fmt(n: number | null | undefined) {
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
-  CRITICAL: 'text-red-400 bg-red-900/30 border-red-800',
-  HIGH:     'text-orange-400 bg-orange-900/30 border-orange-800',
-  MEDIUM:   'text-yellow-400 bg-yellow-900/30 border-yellow-800',
-  LOW:      'text-blue-400 bg-blue-900/30 border-blue-800',
+  CRITICAL: 'text-red-700 bg-red-50 border-red-200',
+  HIGH:     'text-orange-700 bg-orange-50 border-orange-200',
+  MEDIUM:   'text-yellow-700 bg-yellow-50 border-yellow-200',
+  LOW:      'text-blue-700 bg-blue-50 border-blue-200',
 }
 
 const ACTION_COLORS: Record<string, string> = {
-  REMOVE:          'bg-red-900/40 text-red-300',
-  DOWNGRADE:       'bg-orange-900/40 text-orange-300',
-  UPGRADE:         'bg-green-900/40 text-green-300',
-  BOOST:           'bg-teal-900/40 text-teal-300',
-  WATCHLIST:       'bg-blue-900/40 text-blue-300',
-  IMPROVE_QUALITY: 'bg-yellow-900/40 text-yellow-300',
-  REPRICE:         'bg-purple-900/40 text-purple-300',
+  REMOVE:          'bg-red-100 text-red-700',
+  DOWNGRADE:       'bg-orange-100 text-orange-700',
+  UPGRADE:         'bg-green-100 text-green-700',
+  BOOST:           'bg-teal-100 text-teal-700',
+  WATCHLIST:       'bg-blue-100 text-blue-700',
+  IMPROVE_QUALITY: 'bg-yellow-100 text-yellow-700',
+  REPRICE:         'bg-purple-100 text-purple-700',
 }
 
 export default function ListingDetail() {
@@ -66,7 +66,7 @@ export default function ListingDetail() {
     setRecs(prev => prev.filter(r => r.id !== recId))
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
   if (!listing) return <div className="p-6 text-gray-500">Listing not found.</div>
 
   const scoreComponents = score ? [
@@ -92,7 +92,7 @@ export default function ListingDetail() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <span className="font-mono text-brand-400 text-lg font-bold">{listing.reference as string}</span>
+              <span className="font-mono text-brand-600 text-lg font-bold">{listing.reference as string}</span>
               <TierBadge tier={listing.current_tier as string} />
               <ScoreBadge band={listing.score_band as string} score={listing.total_score as number} size="md" />
             </div>
@@ -101,15 +101,15 @@ export default function ListingDetail() {
             </p>
           </div>
           <div className="text-right">
-            <div className="text-xl font-bold text-white">{fmt(listing.effective_price as number)}</div>
+            <div className="text-xl font-bold text-gray-900">{fmt(listing.effective_price as number)}</div>
             <div className="text-xs text-gray-500 mt-0.5">{listing.price_type as string}</div>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-gray-800">
-          <div><div className="text-xs text-gray-500">Total Leads</div><div className="text-white font-semibold mt-0.5">{listing.total_leads as number}</div></div>
-          <div><div className="text-xs text-gray-500">Leads 30d</div><div className="text-white font-semibold mt-0.5">{listing.leads_30d as number}</div></div>
-          <div><div className="text-xs text-gray-500">CPL</div><div className="text-white font-semibold mt-0.5">{fmt(listing.cpl as number)}</div></div>
-          <div><div className="text-xs text-gray-500">Days Live</div><div className="text-white font-semibold mt-0.5">{listing.days_live as number ?? '—'}</div></div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-gray-200">
+          <div><div className="text-xs text-gray-500">Total Leads</div><div className="text-gray-900 font-semibold mt-0.5">{listing.total_leads as number}</div></div>
+          <div><div className="text-xs text-gray-500">Leads 30d</div><div className="text-gray-900 font-semibold mt-0.5">{listing.leads_30d as number}</div></div>
+          <div><div className="text-xs text-gray-500">CPL</div><div className="text-gray-900 font-semibold mt-0.5">{fmt(listing.cpl as number)}</div></div>
+          <div><div className="text-xs text-gray-500">Days Live</div><div className="text-gray-900 font-semibold mt-0.5">{listing.days_live as number ?? '—'}</div></div>
         </div>
       </div>
 
@@ -121,14 +121,14 @@ export default function ListingDetail() {
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={scoreComponents}>
-                  <PolarGrid stroke="#374151" />
+                  <PolarGrid stroke="#e5e7eb" />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                  <Radar dataKey="value" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.15} />
+                  <Radar dataKey="value" stroke="#e11d48" fill="#e11d48" fillOpacity={0.15} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
             <table className="w-full text-xs mt-2">
-              <tbody className="divide-y divide-gray-800/40">
+              <tbody className="divide-y divide-gray-200/40">
                 {[
                   ['Lead Volume (20)', score.s_lead_volume],
                   ['Lead Velocity (10)', score.s_lead_velocity],
@@ -144,10 +144,10 @@ export default function ListingDetail() {
                     <td className="py-1.5 text-gray-400">{label}</td>
                     <td className="py-1.5 text-right">
                       <div className="inline-flex items-center gap-2">
-                        <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-brand-500 rounded-full" style={{ width: `${val ?? 0}%` }} />
+                        <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-brand-600 rounded-full" style={{ width: `${val ?? 0}%` }} />
                         </div>
-                        <span className="text-white font-mono w-8 text-right">{val ?? 0}</span>
+                        <span className="text-gray-900 font-mono w-8 text-right">{val ?? 0}</span>
                       </div>
                     </td>
                   </tr>
@@ -164,10 +164,10 @@ export default function ListingDetail() {
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={snapshots}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="snapshot_date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={d => d.slice(5)} />
                   <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} />
-                  <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
+                  <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }} />
                   <Line dataKey="new_leads_today" stroke="#4ade80" dot={false} strokeWidth={2} name="New Leads" />
                   <Line dataKey="total_leads" stroke="#60a5fa" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="Cumulative" />
                 </LineChart>
@@ -183,10 +183,10 @@ export default function ListingDetail() {
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={snapshots.filter(s => s.cpl != null)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="snapshot_date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={d => d.slice(5)} />
                   <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} />
-                  <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
+                  <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }} />
                   <Line dataKey="cpl" stroke="#f59e0b" dot={false} strokeWidth={2} name="CPL" />
                 </LineChart>
               </ResponsiveContainer>
@@ -202,10 +202,10 @@ export default function ListingDetail() {
           ) : (
             <div className="space-y-3">
               {recs.map(rec => (
-                <div key={rec.id} className={`border rounded-lg p-3 ${PRIORITY_COLORS[rec.priority] ?? 'border-gray-800 bg-gray-800/30'}`}>
+                <div key={rec.id} className={`border rounded-lg p-3 ${PRIORITY_COLORS[rec.priority] ?? 'border-gray-200 bg-gray-100/30'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${ACTION_COLORS[rec.action_type] ?? 'bg-gray-700 text-gray-300'}`}>{rec.action_type}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${ACTION_COLORS[rec.action_type] ?? 'bg-gray-700 text-gray-600'}`}>{rec.action_type}</span>
                       <span className="text-xs opacity-70">{rec.priority}</span>
                     </div>
                     <div className="flex gap-1.5 shrink-0">

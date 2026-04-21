@@ -31,16 +31,16 @@ export default function CostCenter() {
 
   const latestBalance = snapshots[snapshots.length - 1]?.credit_balance
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-white">Cost Center</h1>
+        <h1 className="text-lg font-bold text-gray-900">Cost Center</h1>
         {latestBalance != null && (
           <div className="card py-2 px-4">
             <span className="text-xs text-gray-500">Credit Balance</span>
-            <span className="ml-3 text-lg font-bold text-white">{fmt(latestBalance)}</span>
+            <span className="ml-3 text-lg font-bold text-gray-900">{fmt(latestBalance)}</span>
           </div>
         )}
       </div>
@@ -52,11 +52,11 @@ export default function CostCenter() {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={snapshots}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="snapshot_at" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={d => d.slice(5, 10)} />
                 <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} />
-                <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
-                <Line dataKey="credit_balance" stroke="#0ea5e9" dot={false} strokeWidth={2} name="Balance" />
+                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }} />
+                <Line dataKey="credit_balance" stroke="#e11d48" dot={false} strokeWidth={2} name="Balance" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -72,8 +72,8 @@ export default function CostCenter() {
               <BarChart data={topSpend.slice(0, 10)} layout="vertical" margin={{ left: 0, right: 20 }}>
                 <XAxis type="number" tick={{ fontSize: 10, fill: '#6b7280' }} />
                 <YAxis dataKey="reference" type="category" tick={{ fontSize: 9, fill: '#9ca3af' }} width={70} />
-                <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="total_credits_spent" fill="#0ea5e9" name="Credits" radius={[0, 4, 4, 0]} />
+                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="total_credits_spent" fill="#e11d48" name="Credits" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -90,7 +90,7 @@ export default function CostCenter() {
           ) : (
             <div className="overflow-y-auto max-h-64">
               <table className="w-full text-xs">
-                <thead className="border-b border-gray-800">
+                <thead className="border-b border-gray-200">
                   <tr>
                     <th className="px-2 py-1.5 text-left text-gray-500">Ref</th>
                     <th className="px-2 py-1.5 text-left text-gray-500">Tier</th>
@@ -98,10 +98,10 @@ export default function CostCenter() {
                     <th className="px-2 py-1.5 text-right text-gray-500">Days Live</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800/40">
+                <tbody className="divide-y divide-gray-200/40">
                   {zeroLead.map(row => (
-                    <tr key={row.pf_listing_id} className="hover:bg-gray-800/40">
-                      <td className="px-2 py-1.5 font-mono text-brand-400">{row.reference}</td>
+                    <tr key={row.pf_listing_id} className="hover:bg-gray-100/40">
+                      <td className="px-2 py-1.5 font-mono text-brand-600">{row.reference}</td>
                       <td className="px-2 py-1.5 text-gray-400 capitalize">{row.current_tier}</td>
                       <td className="px-2 py-1.5 text-right text-red-400 font-medium">{fmt(row.total_credits_spent)}</td>
                       <td className="px-2 py-1.5 text-right text-gray-500">{row.days_live ?? '—'}</td>

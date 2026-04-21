@@ -31,31 +31,31 @@ export default function AreaAnalysis() {
       .then(({ data }) => { setAreas((data as AreaRow[]) ?? []); setLoading(false) })
   }, [])
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
 
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-lg font-bold text-white">Area Analysis</h1>
+      <h1 className="text-lg font-bold text-gray-900">Area Analysis</h1>
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-gray-800 bg-gray-900/50">
+            <thead className="border-b border-gray-200 bg-white/80">
               <tr>
                 {['Location', 'Listings', 'Total Leads', 'Avg CPL', 'Avg Score', 'Distribution'].map(h => (
                   <th key={h} className="px-3 py-2 text-left text-xs text-gray-500 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800/60">
+            <tbody className="divide-y divide-gray-200">
               {areas.map(area => {
                 const total = area.count_s + area.count_a + area.count_b + area.count_c + area.count_d + area.count_f
                 return (
                   <tr key={area.dimension_value}>
-                    <td className="px-3 py-2 text-white font-medium">{area.dimension_value}</td>
+                    <td className="px-3 py-2 text-gray-900 font-medium">{area.dimension_value}</td>
                     <td className="px-3 py-2 text-gray-400">{area.listing_count}</td>
-                    <td className="px-3 py-2 text-gray-300">{area.total_leads}</td>
+                    <td className="px-3 py-2 text-gray-600">{area.total_leads}</td>
                     <td className="px-3 py-2 text-gray-400">{fmt(area.avg_cpl)}</td>
-                    <td className="px-3 py-2 text-gray-300">{area.avg_score != null ? Math.round(area.avg_score) : '—'}</td>
+                    <td className="px-3 py-2 text-gray-600">{area.avg_score != null ? Math.round(area.avg_score) : '—'}</td>
                     <td className="px-3 py-2">
                       {total > 0 && (
                         <div className="flex rounded-full overflow-hidden h-3 w-32 gap-px">

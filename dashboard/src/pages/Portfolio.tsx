@@ -92,18 +92,18 @@ export default function Portfolio() {
 
   const Th = ({ col, label }: { col: keyof PortfolioRow; label: string }) => (
     <th
-      className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-300 select-none whitespace-nowrap"
+      className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-600 select-none whitespace-nowrap"
       onClick={() => handleSort(col)}
     >
       {label} {sortCol === col ? (sortAsc ? '↑' : '↓') : ''}
     </th>
   )
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-lg font-bold text-white">Portfolio Overview</h1>
+      <h1 className="text-lg font-bold text-gray-900">Portfolio Overview</h1>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -123,7 +123,7 @@ export default function Portfolio() {
                 <XAxis type="number" tick={{ fontSize: 11, fill: '#6b7280' }} />
                 <YAxis dataKey="band" type="category" tick={{ fontSize: 12, fill: '#9ca3af' }} width={20} />
                 <Tooltip
-                  contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }}
                   cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                 />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
@@ -173,7 +173,7 @@ export default function Portfolio() {
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-gray-800 bg-gray-900/50">
+            <thead className="border-b border-gray-200 bg-white/80">
               <tr>
                 <Th col="reference" label="Ref" />
                 <Th col="property_type" label="Type" />
@@ -190,26 +190,26 @@ export default function Portfolio() {
                 <Th col="days_live" label="Days Live" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800/60">
+            <tbody className="divide-y divide-gray-200">
               {filtered.map(row => (
                 <tr
                   key={row.pf_listing_id}
                   className="table-row-hover"
                   onClick={() => navigate(`/listing/${row.pf_listing_id}`)}
                 >
-                  <td className="px-3 py-2 font-mono text-xs text-brand-400">{row.reference}</td>
-                  <td className="px-3 py-2 text-gray-300 capitalize">{row.property_type ?? '—'}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-brand-600">{row.reference}</td>
+                  <td className="px-3 py-2 text-gray-600 capitalize">{row.property_type ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-400">{row.bedrooms ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate">{row.destination ?? '—'}</td>
                   <td className="px-3 py-2 text-gray-400 max-w-[140px] truncate">{row.location_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-300 whitespace-nowrap">{fmt(row.effective_price)}</td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{fmt(row.effective_price)}</td>
                   <td className="px-3 py-2"><TierBadge tier={row.current_tier} /></td>
                   <td className="px-3 py-2">
                     <span className={`text-xs font-medium ${row.pf_quality_color === 'green' ? 'text-green-400' : row.pf_quality_color === 'yellow' ? 'text-yellow-400' : 'text-red-400'}`}>
                       {row.pf_quality_score ?? '—'}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-gray-300">{row.leads_30d}</td>
+                  <td className="px-3 py-2 text-gray-600">{row.leads_30d}</td>
                   <td className="px-3 py-2 text-gray-400">{row.cpl != null ? fmt(Math.round(row.cpl)) : '—'}</td>
                   <td className="px-3 py-2"><ScoreBadge band={row.score_band} score={row.total_score} /></td>
                   <td className="px-3 py-2 text-gray-500 text-xs max-w-[100px] truncate">{row.agent_name ?? '—'}</td>

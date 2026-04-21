@@ -12,7 +12,7 @@ interface TierRow {
 }
 
 const TIER_COLORS: Record<string, string> = {
-  featured: '#f59e0b', premium: '#8b5cf6', standard: '#0ea5e9', none: '#6b7280'
+  featured: '#f59e0b', premium: '#8b5cf6', standard: '#6b7280', none: '#6b7280'
 }
 
 function fmt(n: number | null | undefined) {
@@ -41,11 +41,11 @@ export default function TierAnalysis() {
     ? (tiers.find(t => t.dimension_value === 'standard')!.total_leads / Math.max(tiers.find(t => t.dimension_value === 'standard')!.listing_count, 1))
     : null
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-lg font-bold text-white">Tier Analysis</h1>
+      <h1 className="text-lg font-bold text-gray-900">Tier Analysis</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {['featured', 'premium', 'standard', 'none'].map(tier => {
@@ -56,13 +56,13 @@ export default function TierAnalysis() {
             <div key={tier} className="card">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2 h-2 rounded-full" style={{ background: TIER_COLORS[tier] }} />
-                <span className="text-sm font-semibold text-white capitalize">{tier}</span>
+                <span className="text-sm font-semibold text-gray-900 capitalize">{tier}</span>
               </div>
               <div className="space-y-1.5 text-xs">
-                <div className="flex justify-between"><span className="text-gray-500">Listings</span><span className="text-gray-300">{t?.listing_count ?? 0}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Avg leads/listing</span><span className="text-gray-300">{avgLeads != null ? avgLeads.toFixed(1) : '—'}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Avg CPL</span><span className="text-gray-300">{fmt(t?.avg_cpl)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Avg score</span><span className="text-gray-300">{t?.avg_score != null ? Math.round(t.avg_score) : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Listings</span><span className="text-gray-600">{t?.listing_count ?? 0}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Avg leads/listing</span><span className="text-gray-600">{avgLeads != null ? avgLeads.toFixed(1) : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Avg CPL</span><span className="text-gray-600">{fmt(t?.avg_cpl)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Avg score</span><span className="text-gray-600">{t?.avg_score != null ? Math.round(t.avg_score) : '—'}</span></div>
                 {mult && tier !== 'standard' && <div className="flex justify-between"><span className="text-gray-500">Lead mult vs std</span><span className={`font-bold ${Number(mult) >= 1.8 ? 'text-green-400' : 'text-orange-400'}`}>{mult}x</span></div>}
               </div>
             </div>
@@ -76,12 +76,12 @@ export default function TierAnalysis() {
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 10, right: 30, bottom: 10, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="total_credits_spent" name="Credits" tick={{ fontSize: 10, fill: '#6b7280' }} />
               <YAxis dataKey="total_leads" name="Leads" tick={{ fontSize: 10, fill: '#6b7280' }} />
               <Tooltip
                 cursor={{ strokeDasharray: '3 3' }}
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }}
               />
               {['featured', 'premium', 'standard', 'none'].map(tier => (
                 <Scatter

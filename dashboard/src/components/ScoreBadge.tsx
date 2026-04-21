@@ -15,7 +15,7 @@ const bandColors: Record<string, string> = {
 
 export default function ScoreBadge({ band, score, size = 'sm' }: Props) {
   if (!band) return <span className="text-gray-500 text-xs">—</span>
-  const colors = bandColors[band] ?? 'bg-gray-700 text-gray-300 border-gray-600'
+  const colors = bandColors[band] ?? 'bg-gray-700 text-gray-600 border-gray-600'
   const sizeClass = size === 'lg' ? 'text-base px-3 py-1.5' : size === 'md' ? 'text-sm px-2.5 py-1' : 'text-xs px-2 py-0.5'
   return (
     <span className={`inline-flex items-center gap-1 border rounded-md font-mono font-bold ${colors} ${sizeClass}`}>

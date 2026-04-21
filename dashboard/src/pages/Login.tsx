@@ -18,20 +18,20 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center">
-            <Eye className="w-5 h-5 text-white" />
+            <Eye className="w-5 h-5 text-gray-900" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white leading-none">PF Eye</h1>
+            <h1 className="text-xl font-bold text-gray-900 leading-none">PF Eye</h1>
             <p className="text-xs text-gray-500 mt-0.5">Performance Engine</p>
           </div>
         </div>
 
         <div className="card">
-          <h2 className="text-sm font-semibold text-gray-300 mb-4">Sign in to your account</h2>
+          <h2 className="text-sm font-semibold text-gray-600 mb-4">Sign in to your account</h2>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Email</label>
