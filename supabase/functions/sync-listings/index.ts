@@ -81,8 +81,11 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
-// API hard-caps at page 100 (10k records). After that we rotate cursor.
-const API_PAGE_LIMIT  = 99
+// API hard-caps at page 100 (10k records). We do two passes:
+//   phase 1: sort DESC (newest first)  → pages 1-100 = newest 10k
+//   phase 2: sort ASC  (oldest first)  → pages 1-100 = oldest 10k
+// Together they cover all ~13k live listings with no page 101 ever hit.
+const API_PAGE_LIMIT  = 100
 const PAGES_PER_CHUNK = 15
 
 const SELF_URL    = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sync-listings`
@@ -104,11 +107,11 @@ Deno.serve(async (req: Request) => {
   let reqBody: Record<string, unknown> = {}
   try { reqBody = await req.json() } catch { /* no body */ }
 
-  const resumeLogId  = reqBody.logId      as number | undefined
-  const startPage    = Number(reqBody.page    ?? 1)
-  const totalSoFar   = Number(reqBody.synced  ?? 0)
-  // cursorDate: when set, we filter createdAt < cursorDate to go past the 10k API limit
-  const cursorDate   = reqBody.cursorDate as string | undefined
+  const resumeLogId = reqBody.logId   as number | undefined
+  const startPage   = Number(reqBody.page   ?? 1)
+  const totalSoFar  = Number(reqBody.synced ?? 0)
+  // phase 1 = sort DESC (newest first), phase 2 = sort ASC (oldest first)
+  const phase       = Number(reqBody.phase  ?? 1)
 
   const supabase  = createSupabaseClient()
   const syncStart = new Date().toISOString()
@@ -128,8 +131,6 @@ Deno.serve(async (req: Request) => {
     let created = 0
     let page    = startPage
     let hasMore = true
-    // Track oldest createdAt seen — used as cursor when we hit the page limit
-    let oldestCreatedAt: string | undefined
 
     while (hasMore && page < startPage + PAGES_PER_CHUNK) {
       const { data: logRow } = await supabase.from('sync_log').select('status').eq('id', logId).single()
@@ -139,15 +140,11 @@ Deno.serve(async (req: Request) => {
         })
       }
 
-      const params: Record<string, string | number> = {
+      const result = await pfFetch('/listings', jwt, {
         page, perPage: 100,
         'filter[state]': 'live',
-        'sort[createdAt]': 'desc',
-      }
-      // Cursor mode: filter to only listings older than the cursor
-      if (cursorDate) params['filter[createdAt][lt]'] = cursorDate
-
-      const result = await pfFetch('/listings', jwt, params)
+        'sort[createdAt]': phase === 1 ? 'desc' : 'asc',
+      })
       jwt = result.jwt
       const body     = result.data as Record<string, unknown>
       const listings = (body.results ?? body.data ?? []) as Record<string, unknown>[]
@@ -159,19 +156,12 @@ Deno.serve(async (req: Request) => {
       if (error) console.error('Upsert error:', error)
       else created += mapped.length
 
-      // Track the oldest createdAt for potential cursor rotation
-      for (const m of mapped) {
-        if (m.pf_created_at && (!oldestCreatedAt || m.pf_created_at < oldestCreatedAt)) {
-          oldestCreatedAt = m.pf_created_at
-        }
-      }
-
       await supabase.from('sync_log').update({ records_synced: totalSoFar + created }).eq('id', logId)
 
       const pagination = body.pagination as Record<string, unknown> | undefined
       if (!pagination?.nextPage) { hasMore = false; break }
 
-      // About to hit the API page limit — break now and rotate cursor
+      // Stop before hitting the API's hard page limit
       if (page >= API_PAGE_LIMIT) break
 
       page++
@@ -180,22 +170,33 @@ Deno.serve(async (req: Request) => {
 
     const totalNow = totalSoFar + created
 
-    if (!hasMore) {
+    if (!hasMore && phase === 2) {
+      // Both phases done — get actual unique count from DB
+      const { count } = await supabase.from('pf_listings').select('*', { count: 'exact', head: true })
       await supabase.from('sync_log').update({
         status: 'SUCCESS',
         completed_at: new Date().toISOString(),
-        records_synced: totalNow,
-        records_created: totalNow,
+        records_synced: count ?? totalNow,
+        records_created: count ?? totalNow,
+      }).eq('id', logId)
+    } else if (!hasMore && phase === 1) {
+      // Phase 1 exhausted before hitting page limit — start phase 2 anyway for safety
+      fireNextChunk({ logId, page: 1, synced: totalNow, phase: 2 })
+    } else if (page >= API_PAGE_LIMIT && phase === 1) {
+      // Hit page limit in phase 1 — switch to phase 2
+      fireNextChunk({ logId, page: 1, synced: totalNow, phase: 2 })
+    } else if (page >= API_PAGE_LIMIT && phase === 2) {
+      // Hit page limit in phase 2 — both passes done
+      const { count } = await supabase.from('pf_listings').select('*', { count: 'exact', head: true })
+      await supabase.from('sync_log').update({
+        status: 'SUCCESS',
+        completed_at: new Date().toISOString(),
+        records_synced: count ?? totalNow,
+        records_created: count ?? totalNow,
       }).eq('id', logId)
     } else {
-      const atPageLimit = page >= API_PAGE_LIMIT && oldestCreatedAt
-      fireNextChunk({
-        logId,
-        // If at the API page limit, rotate: reset to page 1 with a new cursor date
-        page:       atPageLimit ? 1 : page,
-        synced:     totalNow,
-        cursorDate: atPageLimit ? oldestCreatedAt : cursorDate,
-      })
+      // More pages remain in current phase
+      fireNextChunk({ logId, page, synced: totalNow, phase })
     }
 
     return new Response(JSON.stringify({ ok: true, logId }), {
