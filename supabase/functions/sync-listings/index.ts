@@ -1,4 +1,4 @@
-import { createSupabaseClient, getJWT, pfFetch, withSyncLog, corsHeaders, checkCancelled, emitProgress, isToday } from '../_shared/helpers.ts'
+import { createSupabaseClient, getJWT, pfFetch, corsHeaders } from '../_shared/helpers.ts'
 
 function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   const price      = (raw.price      ?? {}) as Record<string, unknown>
@@ -81,22 +81,34 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   }
 }
 
-const PAGES_PER_CHUNK = 8 // ~800 listings per chunk — well within 60s wall-clock limit
+const PAGES_PER_CHUNK = 15
+const SELF_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sync-listings`
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
+function fireNextChunk(logId: number, page: number, synced: number) {
+  const p = fetch(SELF_URL, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ logId, page, synced }),
+  }).catch(e => console.error('Next chunk fire failed:', e))
+  // Keep the runtime alive long enough to dispatch the request
+  // @ts-ignore
+  if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(p)
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   let reqBody: Record<string, unknown> = {}
-  try { reqBody = await req.json() } catch { /* no body is fine */ }
+  try { reqBody = await req.json() } catch { /* no body */ }
 
-  const resumeLogId = reqBody.logId  as number | undefined
+  const resumeLogId = reqBody.logId as number | undefined
   const startPage   = Number(reqBody.page   ?? 1)
   const totalSoFar  = Number(reqBody.synced ?? 0)
 
   const supabase  = createSupabaseClient()
   const syncStart = new Date().toISOString()
 
-  // Chunk 1 creates a new log entry; subsequent chunks reuse it
   let logId = resumeLogId
   if (!logId) {
     const { data } = await supabase
@@ -114,7 +126,6 @@ Deno.serve(async (req: Request) => {
     let hasMore = true
 
     while (hasMore && page < startPage + PAGES_PER_CHUNK) {
-      // Honour cancel
       const { data: logRow } = await supabase.from('sync_log').select('status').eq('id', logId).single()
       if (logRow?.status === 'CANCELLED') {
         return new Response(JSON.stringify({ ok: true, cancelled: true }), {
@@ -151,13 +162,12 @@ Deno.serve(async (req: Request) => {
         records_synced: totalNow,
         records_created: totalNow,
       }).eq('id', logId)
-      return new Response(JSON.stringify({ ok: true, done: true, synced: totalNow }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    } else {
+      // Server fires the next chunk itself — dashboard is not involved
+      fireNextChunk(logId!, page, totalNow)
     }
 
-    // Return cursor so dashboard fires next chunk
-    return new Response(JSON.stringify({ ok: true, done: false, logId, page, synced: totalNow }), {
+    return new Response(JSON.stringify({ ok: true, logId }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
