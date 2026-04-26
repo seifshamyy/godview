@@ -1,12 +1,14 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { PortfolioRow } from '../lib/types'
 import StatCard from '../components/StatCard'
 import ScoreBadge from '../components/ScoreBadge'
 import TierBadge from '../components/TierBadge'
-import { Search, SlidersHorizontal } from 'lucide-react'
+import { Search, ChevronDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+
+const PAGE_SIZE = 300
 
 const BAND_COLORS: Record<string, string> = {
   S: '#a78bfa', A: '#4ade80', B: '#60a5fa', C: '#fbbf24', D: '#f97316', F: '#ef4444'
@@ -19,98 +21,117 @@ function fmt(n: number | null) {
   return String(n)
 }
 
+interface Stats {
+  total: number
+  live: number
+  leads_30d: number
+  scored: number
+  avg_cpl: number | null
+  band_dist: { band: string; count: number }[]
+  destinations: string[]
+  types: string[]
+  locations: { name: string; destination: string | null }[]
+}
+
+type SortCol = 'total_score' | 'effective_price' | 'leads_30d' | 'cpl' | 'days_live' | 'pf_quality_score'
+
 export default function Portfolio() {
   const navigate = useNavigate()
-  const [rows, setRows] = useState<PortfolioRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [filterTier, setFilterTier] = useState('')
-  const [filterBand, setFilterBand] = useState('')
-  const [filterType, setFilterType] = useState('')
-  const [filterDest, setFilterDest] = useState('')
+  const [stats, setStats]           = useState<Stats | null>(null)
+  const [rows, setRows]             = useState<PortfolioRow[]>([])
+  const [total, setTotal]           = useState(0)
+  const [loading, setLoading]       = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [offset, setOffset]         = useState(0)
+
+  const [search, setSearch]               = useState('')
+  const [filterDest, setFilterDest]       = useState('')
   const [filterLocation, setFilterLocation] = useState('')
-  const [sortCol, setSortCol] = useState<keyof PortfolioRow>('total_score')
-  const [sortAsc, setSortAsc] = useState(false)
+  const [filterTier, setFilterTier]       = useState('')
+  const [filterBand, setFilterBand]       = useState('')
+  const [filterType, setFilterType]       = useState('')
+  const [sortCol, setSortCol]             = useState<SortCol>('total_score')
+  const [sortAsc, setSortAsc]             = useState(false)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const onSearch = (v: string) => {
+    setSearch(v)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(v), 350)
+  }
 
   useEffect(() => {
-    supabase
-      .rpc('get_portfolio_overview')
-      .then(({ data, error }) => {
-        if (error) console.error('Portfolio fetch error:', error)
-        // RPC returns json — Supabase wraps scalar json in an array, unwrap it
-        const rows = Array.isArray(data) ? data : (data ?? [])
-        setRows(rows as PortfolioRow[])
-        setLoading(false)
-      })
+    supabase.rpc('get_portfolio_stats').then(({ data }) => {
+      if (data) setStats(data as Stats)
+    })
   }, [])
 
-  const destinations = useMemo(() => [...new Set(rows.map(r => r.destination).filter(Boolean))].sort(), [rows])
-  const locations    = useMemo(() => {
-    const src = filterDest ? rows.filter(r => r.destination === filterDest) : rows
-    return [...new Set(src.map(r => r.location_name).filter(Boolean))].sort()
-  }, [rows, filterDest])
+  const fetchPage = useCallback(async (newOffset: number, replace: boolean) => {
+    if (newOffset === 0) setLoading(true)
+    else setLoadingMore(true)
 
-  const filtered = useMemo(() => {
-    let r = rows
-    if (search) r = r.filter(x =>
-      x.reference?.toLowerCase().includes(search.toLowerCase()) ||
-      x.location_name?.toLowerCase().includes(search.toLowerCase()) ||
-      x.destination?.toLowerCase().includes(search.toLowerCase())
-    )
-    if (filterDest) r = r.filter(x => x.destination === filterDest)
-    if (filterLocation) r = r.filter(x => x.location_name === filterLocation)
-    if (filterTier) r = r.filter(x => x.current_tier === filterTier)
-    if (filterBand) r = r.filter(x => x.score_band === filterBand)
-    if (filterType) r = r.filter(x => x.property_type === filterType)
-    return [...r].sort((a, b) => {
-      const av = a[sortCol] ?? 0
-      const bv = b[sortCol] ?? 0
-      return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
+    const { data, error } = await supabase.rpc('get_portfolio_page', {
+      p_search:   debouncedSearch || null,
+      p_dest:     filterDest     || null,
+      p_location: filterLocation || null,
+      p_tier:     filterTier     || null,
+      p_band:     filterBand     || null,
+      p_type:     filterType     || null,
+      p_sort:     sortCol,
+      p_asc:      sortAsc,
+      p_limit:    PAGE_SIZE,
+      p_offset:   newOffset,
     })
-  }, [rows, search, filterTier, filterBand, filterType, sortCol, sortAsc])
 
-  const stats = useMemo(() => {
-    const live = rows.filter(r => r.is_live)
-    const leads30 = rows.reduce((s, r) => s + r.leads_30d, 0)
-    const withLeads = rows.filter(r => r.total_leads > 0 && r.cpl != null)
-    const avgCpl = withLeads.length ? withLeads.reduce((s, r) => s + (r.cpl ?? 0), 0) / withLeads.length : null
-    return { live: live.length, leads30, avgCpl }
-  }, [rows])
+    if (!error && data) {
+      const result = data as { total: number; rows: PortfolioRow[] }
+      setTotal(result.total)
+      setRows(prev => replace ? result.rows : [...prev, ...result.rows])
+      setOffset(newOffset + result.rows.length)
+    }
+    setLoading(false)
+    setLoadingMore(false)
+  }, [debouncedSearch, filterDest, filterLocation, filterTier, filterBand, filterType, sortCol, sortAsc])
 
-  const bandDist = useMemo(() => {
-    const counts: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, D: 0, F: 0 }
-    rows.forEach(r => { if (r.score_band) counts[r.score_band] = (counts[r.score_band] ?? 0) + 1 })
-    return Object.entries(counts).map(([band, count]) => ({ band, count }))
-  }, [rows])
+  useEffect(() => { fetchPage(0, true) }, [fetchPage])
 
-  const types = useMemo(() => [...new Set(rows.map(r => r.property_type).filter(Boolean))], [rows])
-
-  const handleSort = (col: keyof PortfolioRow) => {
-    if (sortCol === col) setSortAsc(!sortAsc)
+  const handleSort = (col: SortCol) => {
+    if (sortCol === col) setSortAsc(a => !a)
     else { setSortCol(col); setSortAsc(false) }
   }
 
-  const Th = ({ col, label }: { col: keyof PortfolioRow; label: string }) => (
+  const locations = useMemo(() => {
+    if (!stats) return []
+    const src = filterDest ? stats.locations.filter(l => l.destination === filterDest) : stats.locations
+    return src.map(l => l.name)
+  }, [stats, filterDest])
+
+  const bandDist = stats?.band_dist ?? []
+  const hasMore  = rows.length < total
+
+  const Th = ({ col, label }: { col: SortCol; label: string }) => (
     <th
-      className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-600 select-none whitespace-nowrap"
+      className="px-3 py-2 text-left text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-700 select-none whitespace-nowrap"
       onClick={() => handleSort(col)}
     >
       {label} {sortCol === col ? (sortAsc ? '↑' : '↓') : ''}
     </th>
   )
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
-
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-lg font-bold text-gray-900">Portfolio Overview</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold text-gray-900">Portfolio Overview</h1>
+        {stats && <span className="text-xs text-gray-400">{stats.total.toLocaleString()} listings</span>}
+      </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Live Listings" value={stats.live} />
-        <StatCard label="Leads (30d)" value={fmt(stats.leads30)} />
-        <StatCard label="Avg CPL" value={stats.avgCpl != null ? fmt(Math.round(stats.avgCpl)) : '—'} />
-        <StatCard label="Scored" value={rows.filter(r => r.score_band).length} />
+        <StatCard label="Live Listings" value={stats ? stats.live : '—'} />
+        <StatCard label="Leads (30d)"   value={stats ? fmt(stats.leads_30d) : '—'} />
+        <StatCard label="Avg CPL"       value={stats?.avg_cpl != null ? fmt(Math.round(stats.avg_cpl)) : '—'} />
+        <StatCard label="Scored"        value={stats ? stats.scored : '—'} />
       </div>
 
       {/* Score distribution */}
@@ -122,10 +143,7 @@ export default function Portfolio() {
               <BarChart data={bandDist} layout="vertical" margin={{ left: 0, right: 20 }}>
                 <XAxis type="number" tick={{ fontSize: 11, fill: '#6b7280' }} />
                 <YAxis dataKey="band" type="category" tick={{ fontSize: 12, fill: '#9ca3af' }} width={20} />
-                <Tooltip
-                  contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }}
-                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                />
+                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12 }} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                   {bandDist.map(({ band }) => <Cell key={band} fill={BAND_COLORS[band] ?? '#6b7280'} />)}
                 </Bar>
@@ -138,21 +156,16 @@ export default function Portfolio() {
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
-          <input
-            className="input pl-8 w-52"
-            placeholder="Search ref or location…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input className="input pl-8 w-52" placeholder="Search ref or location…" value={search} onChange={e => onSearch(e.target.value)} />
         </div>
         <select className="input" value={filterDest} onChange={e => { setFilterDest(e.target.value); setFilterLocation('') }}>
           <option value="">All destinations</option>
-          {destinations.map(d => <option key={d!} value={d!}>{d}</option>)}
+          {stats?.destinations.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <select className="input" value={filterLocation} onChange={e => setFilterLocation(e.target.value)}>
           <option value="">All locations</option>
-          {locations.map(l => <option key={l!} value={l!}>{l}</option>)}
+          {locations.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
         <select className="input" value={filterTier} onChange={e => setFilterTier(e.target.value)}>
           <option value="">All tiers</option>
@@ -164,64 +177,81 @@ export default function Portfolio() {
         </select>
         <select className="input" value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="">All types</option>
-          {types.map(t => <option key={t!} value={t!}>{t}</option>)}
+          {stats?.types.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <span className="text-xs text-gray-500 ml-auto">{filtered.length} listings</span>
+        <span className="text-xs text-gray-400 ml-auto">
+          {loading ? 'Loading…' : `${rows.length.toLocaleString()} / ${total.toLocaleString()}`}
+        </span>
       </div>
 
       {/* Table */}
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-gray-200 bg-white/80">
+            <thead className="border-b border-gray-200 bg-gray-50">
               <tr>
-                <Th col="reference" label="Ref" />
-                <Th col="property_type" label="Type" />
-                <Th col="bedrooms" label="Beds" />
-                <Th col="destination" label="Destination" />
-                <Th col="location_name" label="Location" />
-                <Th col="effective_price" label="Price" />
+                <Th col="total_score"      label="Score" />
+                <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Ref</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Type</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Beds</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Destination</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Location</th>
+                <Th col="effective_price"  label="Price" />
                 <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Tier</th>
                 <Th col="pf_quality_score" label="Quality" />
-                <Th col="leads_30d" label="Leads 30d" />
-                <Th col="cpl" label="CPL" />
-                <Th col="total_score" label="Score" />
-                <Th col="agent_name" label="Agent" />
-                <Th col="days_live" label="Days Live" />
+                <Th col="leads_30d"        label="Leads 30d" />
+                <Th col="cpl"              label="CPL" />
+                <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Agent</th>
+                <Th col="days_live"        label="Days" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filtered.map(row => (
-                <tr
-                  key={row.pf_listing_id}
-                  className="table-row-hover"
-                  onClick={() => navigate(`/listing/${row.pf_listing_id}`)}
-                >
+              {loading ? (
+                <tr><td colSpan={13} className="text-center py-16">
+                  <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                </td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={13} className="text-center py-12 text-gray-400">No listings found</td></tr>
+              ) : rows.map(row => (
+                <tr key={row.pf_listing_id} className="table-row-hover" onClick={() => navigate(`/listing/${row.pf_listing_id}`)}>
+                  <td className="px-3 py-2"><ScoreBadge band={row.score_band} score={row.total_score} /></td>
                   <td className="px-3 py-2 font-mono text-xs text-brand-600">{row.reference}</td>
-                  <td className="px-3 py-2 text-gray-600 capitalize">{row.property_type ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-400">{row.bedrooms ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate">{row.destination ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-400 max-w-[140px] truncate">{row.location_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{fmt(row.effective_price)}</td>
+                  <td className="px-3 py-2 text-gray-700 capitalize">{row.property_type ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{row.bedrooms ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 max-w-[110px] truncate">{row.destination ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 max-w-[130px] truncate">{row.location_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{fmt(row.effective_price)}</td>
                   <td className="px-3 py-2"><TierBadge tier={row.current_tier} /></td>
                   <td className="px-3 py-2">
-                    <span className={`text-xs font-medium ${row.pf_quality_color === 'green' ? 'text-green-400' : row.pf_quality_color === 'yellow' ? 'text-yellow-400' : 'text-red-400'}`}>
-                      {row.pf_quality_score ?? '—'}
-                    </span>
+                    <span className={`text-xs font-medium ${
+                      row.pf_quality_color === 'green' ? 'text-green-600' :
+                      row.pf_quality_color === 'yellow' ? 'text-yellow-600' : 'text-red-500'
+                    }`}>{row.pf_quality_score ?? '—'}</span>
                   </td>
-                  <td className="px-3 py-2 text-gray-600">{row.leads_30d}</td>
-                  <td className="px-3 py-2 text-gray-400">{row.cpl != null ? fmt(Math.round(row.cpl)) : '—'}</td>
-                  <td className="px-3 py-2"><ScoreBadge band={row.score_band} score={row.total_score} /></td>
-                  <td className="px-3 py-2 text-gray-500 text-xs max-w-[100px] truncate">{row.agent_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-400">{row.days_live ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-700">{row.leads_30d ?? 0}</td>
+                  <td className="px-3 py-2 text-gray-500">{row.cpl != null ? fmt(Math.round(row.cpl)) : '—'}</td>
+                  <td className="px-3 py-2 text-gray-400 text-xs max-w-[90px] truncate">{row.agent_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{row.days_live ?? '—'}</td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={12} className="text-center py-12 text-gray-600">No listings found</td></tr>
-              )}
             </tbody>
           </table>
         </div>
+
+        {hasMore && !loading && (
+          <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between bg-gray-50">
+            <span className="text-xs text-gray-500">Showing {rows.length.toLocaleString()} of {total.toLocaleString()}</span>
+            <button
+              onClick={() => fetchPage(offset, false)}
+              disabled={loadingMore}
+              className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium disabled:opacity-50"
+            >
+              {loadingMore
+                ? <><div className="w-3.5 h-3.5 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /> Loading…</>
+                : <><ChevronDown className="w-3.5 h-3.5" /> Load next {PAGE_SIZE}</>}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
