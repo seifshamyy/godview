@@ -102,3 +102,16 @@ BEGIN
   RETURN v_new_version;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ------------------------------------------------------------
+-- 4. Capture project_id / project_name on pf_listings
+-- ------------------------------------------------------------
+ALTER TABLE pf_listings
+  ADD COLUMN IF NOT EXISTS project_id   text,
+  ADD COLUMN IF NOT EXISTS project_name text;
+
+CREATE INDEX IF NOT EXISTS idx_listings_project ON pf_listings(project_id);
+
+-- Note: pf_listings does not retain a raw_payload column; project_id /
+-- project_name will be populated going forward by the sync-listings
+-- Edge Function's mapListing() once it reads raw.project.{id,name}.

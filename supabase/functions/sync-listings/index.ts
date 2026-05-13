@@ -13,6 +13,7 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
   const assignedTo = (raw.assignedTo ?? {}) as Record<string, unknown>
   const createdBy  = (raw.createdBy  ?? {}) as Record<string, unknown>
   const street     = (raw.street     ?? {}) as Record<string, unknown>
+  const project    = (raw.project    ?? {}) as Record<string, unknown>
   const images     = (media.images   ?? []) as unknown[]
   const videos     = (media.videos   ?? []) as unknown[]
   const mapTier    = (t: unknown) => {
@@ -35,6 +36,8 @@ function mapListing(raw: Record<string, unknown>, syncedAt: string) {
     finishing:               raw.finishingType as string ?? null,
     amenities:               Array.isArray(raw.amenities) ? raw.amenities : [],
     developer:               raw.developer as string ?? null,
+    project_id:              project.id != null ? String(project.id) : null,
+    project_name:            (project.name as string) ?? null,
     project_status:          raw.projectStatus as string ?? null,
     floor_number:            raw.floorNumber != null ? String(raw.floorNumber) : null,
     num_floors:              raw.numberOfFloors != null ? Number(raw.numberOfFloors) : null,
