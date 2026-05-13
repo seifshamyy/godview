@@ -51,8 +51,25 @@ export interface ListingScore {
   s_competitive_position: number | null
   zero_lead_penalty: number
   total_score: number
+  segment_level_used: number | null
+  segment_listing_count: number | null
   score_band: string | null
 }
+
+export interface ScoringConfig {
+  version: number
+  w_lead_volume: number
+  w_lead_velocity: number
+  w_cost_efficiency: number
+  w_tier_roi: number
+  w_quality_score: number
+  w_price_position: number
+  w_listing_completeness: number
+  w_freshness: number
+  w_competitive_position: number
+}
+
+export type RecommendationStatus = 'PENDING' | 'APPROVED' | 'EXECUTED' | 'REJECTED'
 
 export interface Recommendation {
   id: number
@@ -62,9 +79,15 @@ export interface Recommendation {
   priority: string
   reason_summary: string
   reason_details: Record<string, unknown> | null
-  status: string
+  status: RecommendationStatus
   reviewed_by: string | null
   reviewed_at: string | null
+  approved_by: string | null
+  approved_at: string | null
+  executed_by: string | null
+  executed_at: string | null
+  rejected_by: string | null
+  rejected_at: string | null
   notes: string | null
   created_at: string
 }

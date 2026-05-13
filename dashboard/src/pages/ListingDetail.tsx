@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { ListingScore, Recommendation, DailySnapshot } from '../lib/types'
+import type { ListingScore, Recommendation, DailySnapshot, ScoringConfig } from '../lib/types'
 import ScoreBadge from '../components/ScoreBadge'
 import TierBadge from '../components/TierBadge'
 import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react'
@@ -41,6 +41,7 @@ export default function ListingDetail() {
   const navigate = useNavigate()
   const [listing, setListing] = useState<Listing | null>(null)
   const [score, setScore] = useState<ListingScore | null>(null)
+  const [cfg, setCfg] = useState<ScoringConfig | null>(null)
   const [recs, setRecs] = useState<Recommendation[]>([])
   const [snapshots, setSnapshots] = useState<DailySnapshot[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,11 +53,19 @@ export default function ListingDetail() {
       supabase.from('listing_scores').select('*').eq('pf_listing_id', id).order('score_date', { ascending: false }).limit(1).single(),
       supabase.from('recommendations').select('*').eq('pf_listing_id', id).eq('status', 'PENDING').order('priority'),
       supabase.from('listing_daily_snapshots').select('*').eq('pf_listing_id', id).order('snapshot_date', { ascending: true }).limit(90),
-    ]).then(([{ data: l }, { data: s }, { data: r }, { data: snaps }]) => {
+    ]).then(async ([{ data: l }, { data: s }, { data: r }, { data: snaps }]) => {
       setListing(l as Listing)
       setScore(s as ListingScore)
       setRecs((r as Recommendation[]) ?? [])
       setSnapshots((snaps as DailySnapshot[]) ?? [])
+      if (s) {
+        const { data: c } = await supabase
+          .from('scoring_config')
+          .select('*')
+          .eq('version', (s as ListingScore).scoring_config_version)
+          .single()
+        if (c) setCfg(c as ScoringConfig)
+      }
       setLoading(false)
     })
   }, [id])
@@ -112,6 +121,64 @@ export default function ListingDetail() {
           <div><div className="text-xs text-gray-500">Days Live</div><div className="text-gray-900 font-semibold mt-0.5">{listing.days_live as number ?? '—'}</div></div>
         </div>
       </div>
+
+      {/* Score transparency panel — explainable contribution per weighted component */}
+      {score && cfg && (
+        <section className="card">
+          <header className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-xs text-gray-500 font-medium uppercase tracking-wider">Score Breakdown</h2>
+            <span className="text-xs text-gray-500">
+              scoring_config v{score.scoring_config_version} · segment level {score.segment_level_used ?? '—'}
+            </span>
+          </header>
+          <table className="w-full text-sm">
+            <thead className="text-left text-gray-500">
+              <tr>
+                <th className="py-1 font-normal">Component</th>
+                <th className="py-1 text-right font-normal">Score</th>
+                <th className="py-1 text-right font-normal">Weight</th>
+                <th className="py-1 text-right font-normal">Contribution</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([
+                ['Lead Volume',          score.s_lead_volume,          cfg.w_lead_volume],
+                ['Lead Velocity',        score.s_lead_velocity,        cfg.w_lead_velocity],
+                ['Cost Efficiency',      score.s_cost_efficiency,      cfg.w_cost_efficiency],
+                ['Tier ROI',             score.s_tier_roi,             cfg.w_tier_roi],
+                ['PF Quality',           score.s_quality_score,        cfg.w_quality_score],
+                ['Price Position',       score.s_price_position,       cfg.w_price_position],
+                ['Listing Completeness', score.s_listing_completeness, cfg.w_listing_completeness],
+                ['Freshness',            score.s_freshness,            cfg.w_freshness],
+                ['Competitive Position', score.s_competitive_position, cfg.w_competitive_position],
+              ] as Array<[string, number | null, number]>).map(([label, s, w]) => (
+                <tr key={label} className="border-t border-gray-100">
+                  <td className="py-1">{label}</td>
+                  <td className="py-1 text-right">{s != null ? s.toFixed(1) : '—'}</td>
+                  <td className="py-1 text-right text-gray-500">{w}</td>
+                  <td className="py-1 text-right font-medium">
+                    {s != null ? ((s * w) / 100).toFixed(2) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {score.zero_lead_penalty != null && score.zero_lead_penalty > 0 && (
+                <tr className="border-t border-gray-100 text-red-600">
+                  <td className="py-1" colSpan={3}>Zero-Lead Penalty</td>
+                  <td className="py-1 text-right">−{score.zero_lead_penalty.toFixed(2)}</td>
+                </tr>
+              )}
+              <tr className="border-t-2 border-gray-300 font-semibold">
+                <td className="py-2" colSpan={3}>Total</td>
+                <td className="py-2 text-right">{score.total_score.toFixed(1)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-3 text-xs text-gray-500">
+            Total = Σ(component × weight) / 100, minus any zero-lead penalty (25% of raw score when
+            total_leads = 0 and days_live ≥ 14). Bounded to [0, 100].
+          </p>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Score breakdown radar */}
