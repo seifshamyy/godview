@@ -1,8 +1,26 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Recommendation } from '../lib/types'
-import { CheckCircle, XCircle, ExternalLink, RefreshCw } from 'lucide-react'
+import type { Recommendation, RecommendationStatus } from '../lib/types'
+import { CheckCircle, XCircle, ExternalLink, RefreshCw, PlayCircle } from 'lucide-react'
+
+const STATUS_FILTERS: (RecommendationStatus | 'ALL')[] = ['PENDING', 'APPROVED', 'EXECUTED', 'REJECTED', 'ALL']
+
+async function reviewRecommendation(
+  id: number,
+  action: 'APPROVE' | 'REJECT' | 'EXECUTE',
+  actor: string,
+  notes?: string,
+) {
+  const { data, error } = await supabase.rpc('fn_review_recommendation', {
+    p_recommendation_id: id,
+    p_action: action,
+    p_actor: actor,
+    p_notes: notes ?? null,
+  })
+  if (error) throw error
+  return data
+}
 
 const PRIORITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 
@@ -121,14 +139,16 @@ export default function Recommendations() {
   const [loading, setLoading] = useState(true)
   const [regenerating, setRegenerating] = useState(false)
   const [tab, setTab] = useState<string>('CRITICAL')
+  const [statusFilter, setStatusFilter] = useState<RecommendationStatus | 'ALL'>('PENDING')
+  const [userEmail, setUserEmail] = useState<string>('unknown')
 
   const loadRecs = () => {
     setLoading(true)
-    supabase
+    let q = supabase
       .from('recommendations')
       .select('*, pf_listings(reference)')
-      .eq('status', 'PENDING')
-      .order('priority')
+    if (statusFilter !== 'ALL') q = q.eq('status', statusFilter)
+    q.order('priority')
       .order('created_at', { ascending: false })
       .limit(1000)
       .then(({ data }) => {
@@ -141,7 +161,13 @@ export default function Recommendations() {
       })
   }
 
-  useEffect(loadRecs, [])
+  useEffect(loadRecs, [statusFilter])
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.email) setUserEmail(data.user.email)
+    })
+  }, [])
 
   const handleRegenerate = async () => {
     setRegenerating(true)
@@ -150,9 +176,14 @@ export default function Recommendations() {
     setRegenerating(false)
   }
 
-  const handleReview = async (id: number, status: 'APPROVED' | 'REJECTED') => {
-    await supabase.from('recommendations').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
-    setRecs(prev => prev.filter(r => r.id !== id))
+  const handleAction = async (id: number, action: 'APPROVE' | 'REJECT' | 'EXECUTE') => {
+    try {
+      await reviewRecommendation(id, action, userEmail)
+      loadRecs()
+    } catch (e) {
+      console.error('Review failed', e)
+      alert(`Failed to ${action.toLowerCase()}: ${(e as Error).message}`)
+    }
   }
 
   const filtered = useMemo(() => tab === 'ALL' ? recs : recs.filter(r => r.priority === tab), [recs, tab])
@@ -174,7 +205,7 @@ export default function Recommendations() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-gray-900">Recommendations Hub</h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">{recs.length} pending</span>
+          <span className="text-xs text-gray-500">{recs.length} {statusFilter.toLowerCase()}</span>
           <button
             onClick={handleRegenerate}
             disabled={regenerating}
@@ -184,6 +215,21 @@ export default function Recommendations() {
             {regenerating ? 'Regenerating…' : 'Regenerate'}
           </button>
         </div>
+      </div>
+
+      {/* Status filter */}
+      <div className="flex flex-wrap gap-2">
+        {STATUS_FILTERS.map(s => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`rounded px-3 py-1 text-xs font-medium ${
+              statusFilter === s ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {s}
+          </button>
+        ))}
       </div>
 
       {/* Priority summary cards */}
@@ -246,19 +292,41 @@ export default function Recommendations() {
                   </button>
                 )}
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  onClick={() => handleReview(rec.id, 'APPROVED')}
-                  className="text-green-400 hover:text-green-300 transition-colors flex items-center gap-1 text-xs"
-                >
-                  <CheckCircle className="w-4 h-4" /> Approve
-                </button>
-                <button
-                  onClick={() => handleReview(rec.id, 'REJECTED')}
-                  className="text-red-400 hover:text-red-300 transition-colors flex items-center gap-1 text-xs"
-                >
-                  <XCircle className="w-4 h-4" /> Reject
-                </button>
+              <div className="flex gap-2 shrink-0 items-center">
+                {rec.status === 'PENDING' && (
+                  <>
+                    <button
+                      onClick={() => handleAction(rec.id, 'APPROVE')}
+                      className="text-green-600 hover:text-green-700 transition-colors flex items-center gap-1 text-xs"
+                    >
+                      <CheckCircle className="w-4 h-4" /> Approve
+                    </button>
+                    <button
+                      onClick={() => handleAction(rec.id, 'REJECT')}
+                      className="text-red-600 hover:text-red-700 transition-colors flex items-center gap-1 text-xs"
+                    >
+                      <XCircle className="w-4 h-4" /> Reject
+                    </button>
+                  </>
+                )}
+                {rec.status === 'APPROVED' && (
+                  <button
+                    onClick={() => handleAction(rec.id, 'EXECUTE')}
+                    className="text-emerald-600 hover:text-emerald-700 transition-colors flex items-center gap-1 text-xs"
+                  >
+                    <PlayCircle className="w-4 h-4" /> Mark Executed
+                  </button>
+                )}
+                {rec.status === 'EXECUTED' && rec.executed_at && (
+                  <span className="text-xs text-emerald-700">
+                    ✓ Executed by {rec.executed_by ?? '—'} on {new Date(rec.executed_at).toLocaleDateString()}
+                  </span>
+                )}
+                {rec.status === 'REJECTED' && rec.rejected_at && (
+                  <span className="text-xs text-gray-500">
+                    Rejected by {rec.rejected_by ?? '—'} on {new Date(rec.rejected_at).toLocaleDateString()}
+                  </span>
+                )}
               </div>
             </div>
 
