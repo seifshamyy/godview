@@ -543,3 +543,80 @@ BEGIN
   FROM final;
 END;
 $$;
+
+-- ------------------------------------------------------------
+-- 8. Recommendations approval state machine
+-- ------------------------------------------------------------
+ALTER TABLE recommendations
+  ADD COLUMN IF NOT EXISTS approved_by  text,
+  ADD COLUMN IF NOT EXISTS approved_at  timestamptz,
+  ADD COLUMN IF NOT EXISTS executed_by  text,
+  ADD COLUMN IF NOT EXISTS executed_at  timestamptz,
+  ADD COLUMN IF NOT EXISTS rejected_by  text,
+  ADD COLUMN IF NOT EXISTS rejected_at  timestamptz;
+
+UPDATE recommendations
+SET status = 'PENDING'
+WHERE status NOT IN ('PENDING','APPROVED','EXECUTED','REJECTED')
+   OR status IS NULL;
+
+ALTER TABLE recommendations
+  DROP CONSTRAINT IF EXISTS recommendations_status_check;
+ALTER TABLE recommendations
+  ADD CONSTRAINT recommendations_status_check
+    CHECK (status IN ('PENDING','APPROVED','EXECUTED','REJECTED'));
+
+CREATE OR REPLACE FUNCTION fn_review_recommendation(
+  p_recommendation_id bigint,
+  p_action            text,
+  p_actor             text,
+  p_notes             text DEFAULT NULL
+) RETURNS recommendations AS $$
+DECLARE
+  v_row recommendations%ROWTYPE;
+BEGIN
+  SELECT * INTO v_row FROM recommendations WHERE id = p_recommendation_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Recommendation % not found', p_recommendation_id;
+  END IF;
+
+  IF p_action = 'APPROVE' THEN
+    IF v_row.status <> 'PENDING' THEN
+      RAISE EXCEPTION 'Can only approve PENDING recommendations (current: %)', v_row.status;
+    END IF;
+    UPDATE recommendations
+       SET status = 'APPROVED',
+           approved_by = p_actor, approved_at = now(),
+           notes = COALESCE(p_notes, notes)
+     WHERE id = p_recommendation_id
+     RETURNING * INTO v_row;
+
+  ELSIF p_action = 'REJECT' THEN
+    IF v_row.status NOT IN ('PENDING','APPROVED') THEN
+      RAISE EXCEPTION 'Cannot reject from status %', v_row.status;
+    END IF;
+    UPDATE recommendations
+       SET status = 'REJECTED',
+           rejected_by = p_actor, rejected_at = now(),
+           notes = COALESCE(p_notes, notes)
+     WHERE id = p_recommendation_id
+     RETURNING * INTO v_row;
+
+  ELSIF p_action = 'EXECUTE' THEN
+    IF v_row.status <> 'APPROVED' THEN
+      RAISE EXCEPTION 'Can only execute APPROVED recommendations (current: %)', v_row.status;
+    END IF;
+    UPDATE recommendations
+       SET status = 'EXECUTED',
+           executed_by = p_actor, executed_at = now(),
+           notes = COALESCE(p_notes, notes)
+     WHERE id = p_recommendation_id
+     RETURNING * INTO v_row;
+
+  ELSE
+    RAISE EXCEPTION 'Unknown action: % (expected APPROVE|REJECT|EXECUTE)', p_action;
+  END IF;
+
+  RETURN v_row;
+END;
+$$ LANGUAGE plpgsql;
