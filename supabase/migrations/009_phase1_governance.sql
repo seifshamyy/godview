@@ -115,3 +115,105 @@ CREATE INDEX IF NOT EXISTS idx_listings_project ON pf_listings(project_id);
 -- Note: pf_listings does not retain a raw_payload column; project_id /
 -- project_name will be populated going forward by the sync-listings
 -- Edge Function's mapListing() once it reads raw.project.{id,name}.
+-- ------------------------------------------------------------
+-- 5. aggregate_scores: cost-weighted score column
+-- ------------------------------------------------------------
+ALTER TABLE aggregate_scores
+  ADD COLUMN IF NOT EXISTS cost_weighted_score numeric;
+
+-- ------------------------------------------------------------
+-- 6. fn_build_aggregate_scores — cost-weighted + new dimensions
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _agg_insert_dimension(
+  p_dim_type   text,
+  p_dim_column text
+) RETURNS void AS $$
+BEGIN
+  EXECUTE format($f$
+    INSERT INTO aggregate_scores (
+      score_date, dimension_type, dimension_value,
+      listing_count, total_credits, total_leads,
+      avg_score, cost_weighted_score, min_score, max_score, avg_cpl,
+      count_s, count_a, count_b, count_c, count_d, count_f
+    )
+    SELECT
+      CURRENT_DATE,
+      %1$L,
+      %2$I,
+      COUNT(DISTINCT pf_listing_id),
+      SUM(total_credits),
+      SUM(total_leads)::integer,
+      AVG(total_score),
+      CASE
+        WHEN SUM(total_credits) > 0
+          THEN ROUND(SUM(total_score * total_credits) / SUM(total_credits), 2)
+        ELSE ROUND(AVG(total_score), 2)
+      END,
+      MIN(total_score),
+      MAX(total_score),
+      CASE WHEN SUM(total_leads) > 0
+        THEN ROUND(SUM(total_credits) / SUM(total_leads), 2)
+        ELSE NULL END,
+      COUNT(*) FILTER (WHERE score_band = 'S'),
+      COUNT(*) FILTER (WHERE score_band = 'A'),
+      COUNT(*) FILTER (WHERE score_band = 'B'),
+      COUNT(*) FILTER (WHERE score_band = 'C'),
+      COUNT(*) FILTER (WHERE score_band = 'D'),
+      COUNT(*) FILTER (WHERE score_band = 'F')
+    FROM _agg_base
+    WHERE %2$I IS NOT NULL
+    GROUP BY %2$I
+    ON CONFLICT (score_date, dimension_type, dimension_value) DO UPDATE SET
+      listing_count       = EXCLUDED.listing_count,
+      total_credits       = EXCLUDED.total_credits,
+      total_leads         = EXCLUDED.total_leads,
+      avg_score           = EXCLUDED.avg_score,
+      cost_weighted_score = EXCLUDED.cost_weighted_score,
+      min_score           = EXCLUDED.min_score,
+      max_score           = EXCLUDED.max_score,
+      avg_cpl             = EXCLUDED.avg_cpl,
+      count_s = EXCLUDED.count_s, count_a = EXCLUDED.count_a,
+      count_b = EXCLUDED.count_b, count_c = EXCLUDED.count_c,
+      count_d = EXCLUDED.count_d, count_f = EXCLUDED.count_f
+  $f$, p_dim_type, p_dim_column);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_build_aggregate_scores()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM aggregate_scores WHERE score_date = CURRENT_DATE;
+
+  CREATE TEMP TABLE _agg_base ON COMMIT DROP AS
+  SELECT
+    l.pf_listing_id,
+    l.agent_name,
+    loc.name           AS location_name,
+    l.property_type,
+    l.current_tier,
+    l.developer,
+    l.project_name,
+    ls.total_score,
+    ls.score_band,
+    COALESCE(lc.total_leads, 0)::integer AS total_leads,
+    COALESCE(cc.total_credits, 0)        AS total_credits
+  FROM pf_listings l
+  LEFT JOIN pf_locations loc ON l.location_id = loc.location_id
+  LEFT JOIN listing_scores ls ON l.pf_listing_id = ls.pf_listing_id AND ls.score_date = CURRENT_DATE
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*) AS total_leads FROM pf_leads WHERE listing_reference = l.reference
+  ) lc ON true
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(ABS(credit_amount)), 0) AS total_credits
+    FROM pf_credit_transactions WHERE listing_reference = l.reference
+  ) cc ON true
+  WHERE l.is_live = true AND l.is_deleted = false;
+
+  PERFORM _agg_insert_dimension('agent',         'agent_name');
+  PERFORM _agg_insert_dimension('location',      'location_name');
+  PERFORM _agg_insert_dimension('property_type', 'property_type');
+  PERFORM _agg_insert_dimension('tier',          'current_tier');
+  PERFORM _agg_insert_dimension('developer',     'developer');
+  PERFORM _agg_insert_dimension('project',       'project_name');
+END;
+$$ LANGUAGE plpgsql;
