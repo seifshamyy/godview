@@ -128,10 +128,10 @@ export default function Portfolio() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Live Listings" value={stats ? stats.live : '—'} />
-        <StatCard label="Leads (30d)"   value={stats ? fmt(stats.leads_30d) : '—'} />
-        <StatCard label="Avg CPL"       value={stats?.avg_cpl != null ? fmt(Math.round(stats.avg_cpl)) : '—'} />
-        <StatCard label="Scored"        value={stats ? stats.scored : '—'} />
+        <StatCard label="Live Listings" value={stats ? stats.live.toLocaleString() : '—'} />
+        <StatCard label="Leads (30d)"   value={stats ? stats.leads_30d.toLocaleString() : '—'} />
+        <StatCard label="Avg CPL"       value={stats?.avg_cpl != null ? Math.round(stats.avg_cpl).toLocaleString() : '—'} />
+        <StatCard label="Scored"        value={stats ? stats.scored.toLocaleString() : '—'} />
       </div>
 
       {/* Score distribution */}
